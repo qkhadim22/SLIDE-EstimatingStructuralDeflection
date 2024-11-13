@@ -22,7 +22,7 @@ import os
 
 from Models.FlexibleMultibody import NNHydraulics
 
-os.environ['OMP_NUM_THREADS'] = '8' 
+os.environ['OMP_NUM_THREADS'] = '4' 
 
 timeStep    = 5e-3              #Simulation time step: Change it as desired.
 T           = 10               #Time period

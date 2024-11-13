@@ -10,35 +10,29 @@
 # Copyright     :
 #%%++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
 
-import sys
-sys.exudynFast = True #this variable is used to signal to load the fast exudyn module
+# import sys
+# sys.exudynFast = True #this variable is used to signal to load the fast exudyn module
 
 import exudyn as exu
 from exudyn.itemInterface import *
 from exudyn.utilities import *
 from exudyn.FEM import *
-
-import math as mt
-from math import sin, cos, sqrt, pi, tanh
-import time
-from Models.ControlSignals import uref_1, uref_2
-
-
 import matplotlib.pyplot as plt
 from exudyn.plot import PlotSensor, listMarkerStyles
-from exudyn.signalProcessing import GetInterpolatedSignalValue
-
 
 
 import scipy.io
 import os
 import numpy as np
 
+import math as mt
+from math import sin, cos, sqrt, pi, tanh
+import time
+
+
+from SLIDE.fnnModels import ModelComputationType, NNtestModel
 
 import os, sys
-
-SC  = exu.SystemContainer()
-mbs = SC.AddSystem()
 #%%++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++#
 
 # physical parameters
@@ -119,32 +113,101 @@ feT             = FEMinterface()
 class NNHydraulics():
 
     #initialize class 
-    def __init__(self, nStepsTotal=100, endTime=0.5, Flexible=True,
-                 nModes = 2, loadFromSavedNPY=True,
+    def __init__(self, nStepsTotal=100, endTime=0.5, ReD = 3.35e-3, mL= 50, nnType='FFN',
+                 nModes = 2, 
+                 Flexible = True,
+                 loadFromSavedNPY=True,
                  visualization = False,
                  verboseMode = 0):
 
+        NNtestModel.__init__(self)
+
         self.nStepsTotal = nStepsTotal
+        self.nnType = nnType
         self.endTime = endTime
         
         #+++++++++++++++++++++++++++++
         #from hydraulics:
-        self.Flexible = Flexible
         self.nModes = nModes
+        self.Flexible =True
         self.loadFromSavedNPY = loadFromSavedNPY
-        self.Visualization = visualization
         self.StaticCase = False
+        self.Hydraulics = True
+        self.Visualization = visualization
+        self.Plotting = False
+        self.FineMesh = True
+        self.TrainingData= False
+
         #+++++++++++++++++++++++++++++
+        
+        self.ReD    = ReD
+        self.mL     = mL
 
         self.p1     = 2e6
         self.p2     = 2e6
         self.p3     = 2e6
         self.p4     = 2e6
         
+        self.angleMinDeg1 = -10
+        self.angleMaxDeg1 = 50
+        
+        self.angleMinDeg2 = -60
+        self.angleMaxDeg2 = -10
+        
+        self.nOutputs = 1    #tip deflection; number of outputs to be predicted
+        #self.nInputs = 5    #U, p0, p1, s, s_t
+        
+        self.nInputs = 10    #U, p0, s, p1, s_t
+        self.numSensors = 10
+
+        self.verboseMode = verboseMode
+
+        self.modelName = 'hydraulics'
+        self.modelNameShort = 'hyd'
+
+        self.scalPressures1   = 3.50e7 #this is the approx. size of pressures
+        self.scalPressures2   = 3.50e7 #this is the approx. size of pressures
+
+        self.scalStroke1      = L_Cyl1+L_Pis1
+        self.scaldStroke1     = 0.25
+        
+        self.scalStroke2      = L_Cyl2+L_Pis2
+        self.scaldStroke2     = 0.25
+        
+        self.scalU1          = 1
+        self.scalU2          = 1
+        self.scalOut         = 12e-3
+        
+        self.inputScaling = np.hstack((self.scalU1*np.ones(1*(self.nStepsTotal)), 
+                                       self.scalU2*np.ones(1*(self.nStepsTotal)),
+                                       self.scalStroke1*np.ones(1*(self.nStepsTotal)),
+                                       self.scalStroke2*np.ones(1*(self.nStepsTotal)),
+                                       self.scaldStroke1*np.ones(1*(self.nStepsTotal)),
+                                       self.scaldStroke2*np.ones(1*(self.nStepsTotal)),
+                                       self.scalPressures1*np.ones(1*(self.nStepsTotal)),
+                                       self.scalPressures1*np.ones(1*(self.nStepsTotal)), 
+                                       self.scalPressures2*np.ones(1*(self.nStepsTotal)),
+                                       self.scalPressures2*np.ones(1*(self.nStepsTotal))))
+        
+        self.outputScaling = self.scalOut*np.ones((self.nStepsTotal, self.nOutputs))
+        
         self.timeVecOut = np.arange(1,self.nStepsTotal+1)/self.nStepsTotal*self.endTime
         
 
     #%%+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    def IsFFN(self):
+        return self.nnType == 'FFN'
+    
+    def GetInputScaling(self):
+        return self.inputScalingFactor*self.inputScaling
+    
+    #create initialization of (couple of first) hidden states
+    def CreateHiddenInit(self, isTest):
+        return np.array([])
+    
+    def GetOutputScaling(self):
+        return self.outputScalingFactor*self.outputScaling
+    
     def CreateModel(self):
         self.SC  = exu.SystemContainer()
         self.mbs = self.SC.AddSystem()
@@ -160,22 +223,96 @@ class NNHydraulics():
     #create a randomized input vector
     #relCnt can be used to create different kinds of input vectors (sinoid, noise, ...)
     #isTest is True in case of test data creation
-    def CreateInputVector(self, relCnt = 0, theta1 = 0,theta2=0, isTest=False):
+    def CreateInputVector(self, relCnt = 0, isTest=False, dampedwindow=False):
         
-        vec = np.zeros(4*self.nStepsTotal)
+        vec = np.zeros(self.GetInputScaling().shape)
+    
         U1  = np.zeros(self.nStepsTotal)
         U2  = np.zeros(self.nStepsTotal)
+
+        def create_random_input_signal():
+            
+            ten_percent             = int(0.1 * self.nStepsTotal)  
+            
+            # 20 % step signals
+            segment1               = np.ones(2*ten_percent)               # 20% of nStepsTotal at 1  
+            segment2               = -1 * np.ones(2*ten_percent)          # 20% of nStepsTotal at -1
+            segment3               = np.zeros(2*ten_percent)
+            
+            if dampedwindow==False: 
+
+                # 20 % ramp signal: randomly between 1, -1
+                num_segments = np.random.randint(5, 1*ten_percent) #randomly selecting the number of segments 
+                segment_lengths = np.zeros(num_segments, dtype=int)
+                remaining_length = 2*ten_percent - num_segments   
+
+
+                for i in range(num_segments - 1):
+                    # Randomly allocate a portion of the remaining length to this segment
+                    segment_lengths[i] = 1 + np.random.randint(0, remaining_length)
+                    remaining_length -= (segment_lengths[i] - 1)
+
+                segment_lengths[-1] = 1 + remaining_length
+                
+                start_values = np.random.uniform(1, -1, num_segments)
+                end_values = np.random.uniform(-1, 1, num_segments)
+
+                ramp = []
+                for i in range(num_segments):
+                    segment_length = np.random.randint(5, ten_percent)
+                    segment = np.linspace(start_values[i], end_values[i], segment_lengths[i], endpoint=False)
+                    ramp.append(segment)
+                    
+                segment4 = np.concatenate(ramp)   
+
+                # 30 % random values between -1 and 1
+                segment5 = np.random.uniform(low=-1, high=1, size=2*ten_percent)
+                segment5 = segment5[(segment5 != -1) & (segment5 != 0) & (segment5 != 1)]
+            
+                # Concatenate all segments
+                segments = [segment1, segment2, segment3, segment4, segment5] 
+                np.random.shuffle(segments)
+    
+                random_signal = np.concatenate(segments)
+                #np.random.shuffle(random_signal)
+                
+                def custom_shuffle(array, frequency):
+                                        
+                    for _ in range(frequency):
+                        # Randomly select two indices to swap
+                        i, j = np.random.randint(0, self.nStepsTotal , size=2)
+                        # Swap elements
+                        array[i], array[j] = array[j], array[i]
+                        
+                
+                #Swapping frequency
+                num_swaps = np.random.randint(1, 0.1*self.nStepsTotal)  #self.nStepsTotal
+                custom_shuffle(random_signal, num_swaps)
+
+
+            else:
+                        
+                segments = [segment1, np.zeros(8*ten_percent)]
+                random_signal         = np.concatenate(segments)
+                
+            return random_signal
         
-        for i in range(self.nStepsTotal):
-            U1[i] =uref_1(self.timeVecOut[i])
-            U2[i] =uref_2(self.timeVecOut[i])
+        U1          = create_random_input_signal()
+        U2          = create_random_input_signal()
+        angleInit1  = np.random.rand()*(self.angleMaxDeg1-self.angleMinDeg1)+self.angleMinDeg1
+        angleInit2  = np.random.rand()*(self.angleMaxDeg2-self.angleMinDeg2)+self.angleMinDeg2
+        
+        #angleInit1  = 14.6
+        #angleInit2  = -58.8 #np.deg2rad(-58.8)
 
-        vec[0:self.nStepsTotal]                         = U1      
-        vec[1*(self.nStepsTotal):2*(self.nStepsTotal)]  = U2
-        vec[2*(self.nStepsTotal)]  = theta1
-        vec[3*(self.nStepsTotal)]  = theta2
-
+        vec[0:self.nStepsTotal]                     = U1
+        vec[self.nStepsTotal:2*self.nStepsTotal]    = U2 
+        vec[self.nStepsTotal*3]                     = angleInit1 
+        vec[self.nStepsTotal*4]                     = angleInit2 
+        
+        
         return vec
+
             
     #get number of simulation steps
     def GetNSimulationSteps(self):
@@ -188,9 +325,15 @@ class NNHydraulics():
         
         # rv['t']          = inputData[0:self.nStepsTotal]       
         rv['U1']         = inputData[0*(self.nStepsTotal):1*(self.nStepsTotal)]      
-        rv['U2']         = inputData[1*(self.nStepsTotal):2*(self.nStepsTotal)]       
-        rv['theta1']     = inputData[2*(self.nStepsTotal):3*(self.nStepsTotal)]       
-        rv['theta2']     = inputData[3*(self.nStepsTotal):4*(self.nStepsTotal)]       
+        rv['U2']         = inputData[1*(self.nStepsTotal):2*(self.nStepsTotal)]   
+        rv['s1']         = inputData[2*(self.nStepsTotal):3*(self.nStepsTotal)]    
+        rv['s2']         = inputData[3*(self.nStepsTotal):4*(self.nStepsTotal)]       
+        rv['ds1']        = inputData[4*(self.nStepsTotal):5*(self.nStepsTotal)]    
+        rv['ds2']        = inputData[5*(self.nStepsTotal):6*(self.nStepsTotal)]
+        rv['p1']         = inputData[6*(self.nStepsTotal):7*(self.nStepsTotal)]    
+        rv['p2']         = inputData[7*(self.nStepsTotal):8*(self.nStepsTotal)]
+        rv['p3']         = inputData[8*(self.nStepsTotal):9*(self.nStepsTotal)]       
+        rv['p4']         = inputData[9*(self.nStepsTotal):10*(self.nStepsTotal)]       
 
         # rv['theta1']    = inputData[2*(self.nStepsTotal):3*(self.nStepsTotal)]
          
@@ -202,11 +345,7 @@ class NNHydraulics():
     def SplitOutputData(self, outputData):
         rv = {}
         
-        rv['s1'] = outputData[0*self.nStepsTotal:self.nStepsTotal]
-        rv['ds1'] = outputData[1*self.nStepsTotal:2*self.nStepsTotal]
-        rv['s2'] = outputData[2*self.nStepsTotal:3*self.nStepsTotal]
-        rv['ds2'] = outputData[3*self.nStepsTotal:4*self.nStepsTotal]
-                
+        rv['uTip'] = outputData[0*self.nStepsTotal:self.nStepsTotal]
         return rv
     
 
@@ -234,8 +373,8 @@ class NNHydraulics():
         self.mbs.variables['inputTimeU2'] = self.inputTimeU2
 
         
-        self.mbs.variables['theta1'] = inputData[self.nStepsTotal*2]
-        self.mbs.variables['theta2'] = inputData[self.nStepsTotal*3]
+        self.mbs.variables['theta1'] = inputData[self.nStepsTotal*3]
+        self.mbs.variables['theta2'] = inputData[self.nStepsTotal*4]
         
         self.PatuCrane(self.mbs.variables['theta1'], self.mbs.variables['theta2'],
                                    self.p1, self.p2, self.p3, self.p4)
@@ -249,25 +388,31 @@ class NNHydraulics():
         
         #++++++++++++++++++++++++++
         #Input data
-        inputDict['t']  =  self.timeVecOut
-        inputDict['U1'] =  inputDict['U1']
-        inputDict['U2'] =  inputDict['U2']
+        #inputDict['t']  =  self.timeVecOut
+        inputDict['U1']     =  inputData[0:self.nStepsTotal]
+        inputDict['U2']     =  inputData[1*self.nStepsTotal:2*self.nStepsTotal]
+        inputDict['s1']     =  self.mbs.GetSensorStoredData(DS['sDistance1'])[0:1*self.nStepsTotal,1:2]
+        inputDict['s2']     =  self.mbs.GetSensorStoredData(DS['sDistance2'])[0:1*self.nStepsTotal,1:2]
+        inputDict['ds1']    =  self.mbs.GetSensorStoredData(DS['sVelocity1'])[0:1*self.nStepsTotal,1:2]
+        inputDict['ds2']    =  self.mbs.GetSensorStoredData(DS['sVelocity2'])[0:1*self.nStepsTotal,1:2]       
+        inputDict['p1']     =  self.mbs.GetSensorStoredData(DS['sPressuresL'])[0:1*self.nStepsTotal,1:2]
+        inputDict['p2']     =  self.mbs.GetSensorStoredData(DS['sPressuresL'])[0:1*self.nStepsTotal,2:3]
+        inputDict['p3']     =  self.mbs.GetSensorStoredData(DS['sPressuresT'])[0:1*self.nStepsTotal,1:2]
+        inputDict['p4']     =  self.mbs.GetSensorStoredData(DS['sPressuresT'])[0:1*self.nStepsTotal,2:3]
+        
+        #Ouputs
+        
+        outputData          = 0*self.GetOutputScaling()
+        outputData[:,0]     = self.mbs.GetSensorStoredData(DS['sensorTip'])[0:self.nStepsTotal,2]
+        
+        inputDict           = inputDict/self.GetInputScaling()
+        outputData          = outputData/self.GetOutputScaling()  
+        
+        dampedSteps         =  np.array([])
 
-        
-        #Outputdata
-        outputData['angle1'] = self.mbs.GetSensorStoredData(DS['angle1'])[0:self.nStepsTotal,1:4]
-        outputData['anularVelocity1'] = self.mbs.GetSensorStoredData(DS['anularVelocity1'])[0:self.nStepsTotal,1:4]
-        outputData['angle2'] = self.mbs.GetSensorStoredData(DS['angle2'])[0:self.nStepsTotal,1:4]
-        outputData['anularVelocity2'] = self.mbs.GetSensorStoredData(DS['anularVelocity2'])[0:self.nStepsTotal,1:4]
-        
-        outputData['sPressuresL'] = self.mbs.GetSensorStoredData(DS['sPressuresL'])[0:1*self.nStepsTotal,1:3]
-        outputData['sPressuresT'] = self.mbs.GetSensorStoredData(DS['sPressuresT'])[0:1*self.nStepsTotal,1:3]
-        
-        outputData['sDistance1'] = self.mbs.GetSensorStoredData(DS['sDistance1'])[0:1*self.nStepsTotal,1:2]
-        outputData['sDistance2'] = self.mbs.GetSensorStoredData(DS['sDistance2'])[0:1*self.nStepsTotal,1:2]
-
+        # dampedSteps         =  np.array([self.hist_window])
             
-        return [inputDict, outputData] 
+        return [inputDict, outputData, dampedSteps] 
     
 
 
@@ -438,7 +583,7 @@ class NNHydraulics():
             LiftBoomFFRF        = LiftBoom.AddObjectFFRFreducedOrder(self.mbs, positionRef=np.array([-0.09, 1.4261, 0]), 
                                                           initialVelocity=[0,0,0], 
                                                           initialAngularVelocity=[0,0,0],
-                                                          rotationMatrixRef  = RotationMatrixZ((self.theta1)),
+                                                          rotationMatrixRef  = RotationMatrixZ(mt.radians(self.theta1)),
                                                           gravity=g,
                                                           color=colLift,)
             
@@ -448,7 +593,7 @@ class NNHydraulics():
                                                                       + np.array([2.76-12e-3,  0.846520-12e-3, 0]), #2.879420180699481+27e-3, -0.040690041435711005+8.3e-2, 0
                                                           initialVelocity=[0,0,0], 
                                                           initialAngularVelocity=[0,0,0],
-                                                          rotationMatrixRef  = RotationMatrixZ((self.theta2))   ,
+                                                          rotationMatrixRef  = RotationMatrixZ(mt.radians(self.theta2))   ,
                                                           gravity=g,
                                                           color=colLift,)
             Marker7         = self.mbs.AddMarker(MarkerSuperElementRigid(bodyNumber=LiftBoomFFRF['oFFRFreducedOrder'],
@@ -476,6 +621,8 @@ class NNHydraulics():
             Marker14        = self.mbs.AddMarker(MarkerSuperElementRigid(bodyNumber=TiltBoomFFRF['oFFRFreducedOrder'], 
                                                                                   meshNodeNumbers=np.array(nodeListPist1T), #these are the meshNodeNumbers
                                                                                   weightingFactors=noodeWeightsPist1T))  
+            
+            MarkerTip   = feT.GetNodeAtPoint(np.array([1.80499995,  0.266000003, 0.0510110967]))
        
         else:
             iCube2          = RigidBodyInertia(mass=143.66, com=pMid2,
@@ -494,7 +641,7 @@ class NNHydraulics():
                                 inertia=iCube2,  # includes COM
                                 nodeType=exu.NodeType.RotationEulerParameters,
                                 position=LiftP,  # pMid2
-                                rotationMatrix=RotationMatrixZ((self.theta1)),
+                                rotationMatrix=RotationMatrixZ(mt.radians(self.theta1)),
                                 gravity=g,
                                 graphicsDataList=[graphicsCOM2, graphicsBody2])
             
@@ -518,7 +665,7 @@ class NNHydraulics():
                                     inertia=iCube3,  # includes COM
                                     nodeType=exu.NodeType.RotationEulerParameters,
                                     position=LiftP + np.array([2.76,  0.846520, 0]),  # pMid2
-                                    rotationMatrix=RotationMatrixZ((self.theta2)),
+                                    rotationMatrix=RotationMatrixZ(mt.radians(self.theta2)),
                                     gravity=g,
                                     graphicsDataList=[graphicsCOM3, graphicsBody3])
             Marker13        = self.mbs.AddMarker(MarkerBodyRigid(bodyNumber=b3, localPosition=[0, 0, 0]))                        #With LIft Boom 
@@ -699,15 +846,15 @@ class NNHydraulics():
         self.mbs.SetPreStepUserFunction(PreStepUserFunction)  
         
         if self.Flexible:
-            Angle1       = self.mbs.AddSensor(SensorNode( nodeNumber=LiftBoomFFRF['nRigidBody'], storeInternal=True, 
-                                                        fileName = f"solution/Simulation_Flexible_f_modes_{self.nModes}_angle1.txt", outputVariableType=exu.OutputVariableType.Rotation))
-            Angle2       = self.mbs.AddSensor(SensorNode(nodeNumber= TiltBoomFFRF['nRigidBody'], storeInternal=True,
-                                                         fileName = f"solution/Simulation_Flexible_f_modes_{self.nModes}_angle2.txt", outputVariableType=exu.OutputVariableType.Rotation))
-            AngVelocity1       = self.mbs.AddSensor(SensorNode( nodeNumber=LiftBoomFFRF['nRigidBody'], storeInternal=True,
-                                                               fileName = f"solution/Simulation_Flexible_f_modes_{self.nModes}_angularVelocity1.txt", 
-                                                               outputVariableType=exu.OutputVariableType.AngularVelocity))
-            AngVelocity2       = self.mbs.AddSensor(SensorNode(nodeNumber= TiltBoomFFRF['nRigidBody'], storeInternal=True,
-                                                               fileName = f"solution/Simulation_Flexible_f_modes_{self.nModes}_angularVelocity2.txt", outputVariableType=exu.OutputVariableType.AngularVelocity))
+            #Angle1       = self.mbs.AddSensor(SensorNode( nodeNumber=LiftBoomFFRF['nRigidBody'], storeInternal=True, 
+             #                                           fileName = f"solution/Simulation_Flexible_f_modes_{self.nModes}_angle1.txt", outputVariableType=exu.OutputVariableType.Rotation))
+            #Angle2       = self.mbs.AddSensor(SensorNode(nodeNumber= TiltBoomFFRF['nRigidBody'], storeInternal=True,
+              #                                           fileName = f"solution/Simulation_Flexible_f_modes_{self.nModes}_angle2.txt", outputVariableType=exu.OutputVariableType.Rotation))
+            #AngVelocity1       = self.mbs.AddSensor(SensorNode( nodeNumber=LiftBoomFFRF['nRigidBody'], storeInternal=True,
+               #                                                fileName = f"solution/Simulation_Flexible_f_modes_{self.nModes}_angularVelocity1.txt", 
+                #                                               outputVariableType=exu.OutputVariableType.AngularVelocity))
+            #AngVelocity2       = self.mbs.AddSensor(SensorNode(nodeNumber= TiltBoomFFRF['nRigidBody'], storeInternal=True,
+                 #                                              fileName = f"solution/Simulation_Flexible_f_modes_{self.nModes}_angularVelocity2.txt", outputVariableType=exu.OutputVariableType.AngularVelocity))
            
             sForce1          = self.mbs.AddSensor(SensorObject(objectNumber=oHA1, storeInternal=True, 
                                                                outputVariableType=exu.OutputVariableType.Force))
@@ -730,6 +877,11 @@ class NNHydraulics():
                                                              outputVariableType=exu.OutputVariableType.Coordinates))   
             sPressuresT      = self.mbs.AddSensor(SensorNode(nodeNumber=nODE2, storeInternal=True,
                                                              outputVariableType=exu.OutputVariableType.Coordinates))   
+            
+            DeflectionF          = self.mbs.AddSensor(SensorSuperElement(bodyNumber=TiltBoomFFRF['oFFRFreducedOrder'], meshNodeNumber=MarkerTip, 
+                                                                   storeInternal=True, outputVariableType=exu.OutputVariableType.DisplacementLocal ))
+            
+
 
             
             
@@ -742,15 +894,15 @@ class NNHydraulics():
                 
             #     return [val1, val2] #return angle in degree
         else:
-            Angle1       = self.mbs.AddSensor(SensorBody( bodyNumber=b2,localPosition=pMid2, storeInternal=True, 
-                                                         fileName = 'solution/Simulation_Rigid_angle1.txt', outputVariableType=exu.OutputVariableType.Rotation))
-            Angle2       = self.mbs.AddSensor(SensorBody(bodyNumber=b3, localPosition= pMid3, storeInternal=True,
-                                                         fileName = 'solution/Simulation_Rigid_angle2.txt', outputVariableType=exu.OutputVariableType.Rotation))
-            AngVelocity1       = self.mbs.AddSensor(SensorBody( bodyNumber=b2,localPosition=pMid2, storeInternal=True,
-                                                               fileName = 'solution/Simulation_Rigid_angularVelocity1.txt', 
-                                                               outputVariableType=exu.OutputVariableType.AngularVelocity))
-            AngVelocity2       = self.mbs.AddSensor(SensorBody(bodyNumber=b3, localPosition= pMid3, storeInternal=True,
-                                                               fileName = 'solution/Simulation_Rigid_angularVelocity2.txt', outputVariableType=exu.OutputVariableType.AngularVelocity))
+            #Angle1       = self.mbs.AddSensor(SensorBody( bodyNumber=b2,localPosition=pMid2, storeInternal=True, 
+             #                                            fileName = 'solution/Simulation_Rigid_angle1.txt', outputVariableType=exu.OutputVariableType.Rotation))
+            #Angle2       = self.mbs.AddSensor(SensorBody(bodyNumber=b3, localPosition= pMid3, storeInternal=True,
+             #                                            fileName = 'solution/Simulation_Rigid_angle2.txt', outputVariableType=exu.OutputVariableType.Rotation))
+            #AngVelocity1       = self.mbs.AddSensor(SensorBody( bodyNumber=b2,localPosition=pMid2, storeInternal=True,
+             #                                                  fileName = 'solution/Simulation_Rigid_angularVelocity1.txt', 
+              #                                                 outputVariableType=exu.OutputVariableType.AngularVelocity))
+            #AngVelocity2       = self.mbs.AddSensor(SensorBody(bodyNumber=b3, localPosition= pMid3, storeInternal=True,
+             #                                                  fileName = 'solution/Simulation_Rigid_angularVelocity2.txt', outputVariableType=exu.OutputVariableType.AngularVelocity))
             sForce1       = self.mbs.AddSensor(SensorObject(objectNumber=oHA1, storeInternal=True, fileName = 'solution/sForce1.txt', outputVariableType=exu.OutputVariableType.Force))
             sForce2       = self.mbs.AddSensor(SensorObject(objectNumber=oHA2, storeInternal=True, fileName = 'solution/sForce2.txt', outputVariableType=exu.OutputVariableType.Force))
             sPressuresL      = self.mbs.AddSensor(SensorNode(nodeNumber=nODE1, storeInternal=True,fileName = 'solution/sPressuresL.txt', outputVariableType=exu.OutputVariableType.Coordinates)) 
@@ -765,10 +917,10 @@ class NNHydraulics():
                                                                outputVariableType=exu.OutputVariableType.VelocityLocal))
 
         
-        self.dictSensors['angle1']=Angle1
-        self.dictSensors['angle2']=Angle2
-        self.dictSensors['anularVelocity1']=AngVelocity1
-        self.dictSensors['anularVelocity2']=AngVelocity2
+        # self.dictSensors['angle1']=Angle1
+        # self.dictSensors['angle2']=Angle2
+        # self.dictSensors['anularVelocity1']=AngVelocity1
+        # self.dictSensors['anularVelocity2']=AngVelocity2
         self.dictSensors['sForce1']=sForce1
         self.dictSensors['sForce2']=sForce2 
         self.dictSensors['sDistance1']=sDistance1
@@ -777,25 +929,26 @@ class NNHydraulics():
         self.dictSensors['sVelocity2']=sVelocity2
         self.dictSensors['sPressuresL']=sPressuresL
         self.dictSensors['sPressuresT']=sPressuresT
+        self.dictSensors['sensorTip']=DeflectionF
 
 
 
         #assemble and solve    
         self.mbs.Assemble()
         self.simulationSettings = exu.SimulationSettings()   
-        self.simulationSettings.solutionSettings.sensorsWritePeriod = 10*(self.endTime / (self.nStepsTotal))
+        self.simulationSettings.solutionSettings.sensorsWritePeriod = (self.endTime / (self.nStepsTotal))
         
         self.simulationSettings.timeIntegration.numberOfSteps            = self.GetNSimulationSteps()
         self.simulationSettings.timeIntegration.endTime                  = self.endTime
         self.simulationSettings.timeIntegration.verboseModeFile          = 0
-        self.simulationSettings.timeIntegration.verboseMode              = self.verboseMode
+        #self.simulationSettings.timeIntegration.verboseMode              = self.verboseMode
         self.simulationSettings.timeIntegration.newton.useModifiedNewton = True
         self.simulationSettings.linearSolverType                         = exu.LinearSolverType.EigenSparse
         self.simulationSettings.timeIntegration.stepInformation         += 8
-        self.simulationSettings.displayStatistics                        = True
+        #self.simulationSettings.displayStatistics                        = True
         self.simulationSettings.displayComputationTime                   = True
         self.simulationSettings.linearSolverSettings.ignoreSingularJacobian=True
-        #self.simulationSettings.timeIntegration.generalizedAlpha.spectralRadius  = 0.7
+        self.simulationSettings.timeIntegration.generalizedAlpha.spectralRadius  = 0.7
 
         self.SC.visualizationSettings.nodes.show = False
         
@@ -815,7 +968,7 @@ class NNHydraulics():
             self.mbs.variables['isStatics'] = True
             self.simulationSettings.staticSolver.newton.relativeTolerance = 1e-7
             # self.simulationSettings.staticSolver.stabilizerODE2term = 2
-            self.simulationSettings.staticSolver.verboseMode = self.verboseMode
+            #self.simulationSettings.staticSolver.verboseMode = self.verboseMode
             self.simulationSettings.staticSolver.numberOfLoadSteps = 1
             self.simulationSettings.staticSolver.constrainODE1coordinates = True #constrain pressures to initial values
         
