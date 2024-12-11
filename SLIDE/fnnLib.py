@@ -17,7 +17,7 @@ from exudyn.processing import ParameterVariation
 from exudyn.plot import PlotSensor, listMarkerStyles
 
 from timeit import default_timer as timer
-from SLIDE.fnnModels import NNtestModel, NonlinearOscillator
+from fnnModels import NNtestModel, NonlinearOscillator
 
 import sys
 import numpy as np
@@ -66,8 +66,12 @@ def NeuralNetworkStructureTypes():
             'LRSRL', 'LRL', 'LTSTSTL','LTTL','LESEL', 'LLR', #18
             'LLRL', 'LLLRL', 'LLRLRL', 'LLLL', 'LRdL','LRLRL','LRLRLRRL','LRL', #25
                   'LdLRdL', 'LRdLRdL', 'LLLRLRL','TTTTTT'] #28
-def GetSensorsFromSensorType(): 
-    N = 5
+def GetSensorsFromSensorType(system): 
+    if system:
+        N = 10
+    else:
+        N = 5
+        
     sensorVector = []
     for i in range(1, 2**N): 
         sensorVector += [[]]
@@ -260,6 +264,7 @@ def ParameterFunctionTraining(parameterSet):
     P.sensorType = -1 
     P.sensorsUsed = [0,1,2,3,4]
     P.stepPredictor = 1
+    P.system = 'system'
     
     # #now update parameters with parameterSet (will work with any parameters in structure P)
     for key,value in parameterSet.items():
@@ -278,7 +283,7 @@ def ParameterFunctionTraining(parameterSet):
     neuralNetworkTypeName = BasicNeuralNetworkNames()[P.neuralNetworkType]
     
     if P.sensorType != -1: 
-        sensorsUsed = GetSensorsFromSensorType()[P.sensorType]
+        sensorsUsed = GetSensorsFromSensorType(P.system)[P.sensorType]
         # nPredictor  = GetStepPredictor()[P.nPredictor]
         # nPredictor  = int(nPredictor[0])
         
@@ -344,22 +349,29 @@ def PVCreateData(parameterFunction):
     nSamples = parameterFunction['functionData']['nSamples']
     cnt = parameterFunction['cnt'] #usually not needed
     flattenData = parameterFunction['functionData']['flattenData']
-    dampedwindow = parameterFunction['functionData']['dampedwindow']
+    SLIDEwindow = parameterFunction['functionData']['SLIDEwindow']
+    system = parameterFunction['functionData']['system']
+
 
     seed = int(cnt)
     if isTest:
         seed = 2**31 - seed #2**32-1 is max value
         #print('seed:', seed)
     np.random.seed(seed)
-
-    inputVec = nnModel.CreateInputVector(relCnt = cnt/nSamples, isTest = isTest, dampedwindow=dampedwindow )
+    
+    if system:
+        inputVec = nnModel.CreatePATUInputVector(relCnt = cnt/nSamples, isTest = isTest, SLIDEwindow=SLIDEwindow)
+    else:
+        inputVec = nnModel.CreateLiftBoomInputVector(relCnt = cnt/nSamples, isTest = isTest, SLIDEwindow=SLIDEwindow)
+        
     hiddenVec = nnModel.CreateHiddenInit(isTest)
-    [inputVec, outputVec, dampedSteps] = nnModel.ComputeModel(inputVec, hiddenVec,dampedwindow)
+    [inputVec, outputVec, SLIDESteps] = nnModel.ComputeModel(inputVec, hiddenVec,
+                                                              SLIDEwindow, Patu=system)
 
     if flattenData:
-        return [[inputVec.flatten()], outputVec.flatten(), hiddenVec.flatten(), dampedSteps.flatten()]
+        return [[inputVec.flatten()], outputVec.flatten(), hiddenVec.flatten(), SLIDESteps.flatten()]
     else:
-        return [inputVec, outputVec, hiddenVec, dampedSteps]
+        return [inputVec, outputVec, hiddenVec, SLIDESteps]
 
     # inputs += [[inputVec.flatten()]]
     # targets += [outputVec.flatten()]
@@ -417,27 +429,33 @@ class NeuralNetworkTrainingCenter():
         showTests = parameterFunction['functionData']['showTests']
         cnt = parameterFunction['cnt'] #usually not needed
         flattenData = parameterFunction['functionData']['flattenData']
-        dampedwindow = parameterFunction['functionData']['dampedwindow']
+        SLIDEwindow = parameterFunction['functionData']['SLIDEwindow']
+        system = parameterFunction['functionData']['system']
         
     
-        inputVec = nnModel.CreateInputVector(relCnt = cnt/nSamples, isTest = isTest,dampedwindow=dampedwindow )
+        if system:
+            inputVec = nnModel.CreateInputVector(relCnt = cnt/nSamples, isTest = isTest, SLIDEwindow=SLIDEwindow)
+        else:
+            inputVec = nnModel.CreateLiftBoomInputVector(relCnt = cnt/nSamples, isTest = isTest, SLIDEwindow=SLIDEwindow)
+            
+            
         hiddenVec = nnModel.CreateHiddenInit(isTest)
-        [inputVec, outputVec,dampedSteps ] = nnModel.ComputeModel(inputVec, 
-                                         hiddenData=hiddenVec,dampedwindow=dampedwindow,
+        [inputVec, outputVec,SLIDESteps ] = nnModel.ComputeModel(inputVec, 
+                                         hiddenData=hiddenVec,SLIDEwindow=SLIDEwindow, Patu=system,
                                          solutionViewer = isTest and (cnt in showTests))
     
         if flattenData:
-            return [[inputVec.flatten()], outputVec.flatten(), hiddenVec.flatten(),dampedSteps]
+            return [[inputVec.flatten()], outputVec.flatten(), hiddenVec.flatten(),SLIDESteps]
         else:
             
             
             #print('inputs shape=', inputVec.shape)
-            return [inputVec, outputVec, hiddenVec,dampedSteps]
+            return [inputVec, outputVec, hiddenVec,SLIDESteps]
     
     #create input data from model function
     #if plotData > 0, the first data is plotted
     #showTests is a list of tests which are shown with solution viewer (not parallel)
-    def CreateTrainingAndTestData(self, nTraining, nTest, 
+    def CreateTrainingAndTestData(self, nTraining, nTest, system,
                                   parameterFunction=None, showTests=[]):
         
         useMultiProcessing=True
@@ -454,7 +472,7 @@ class NeuralNetworkTrainingCenter():
         self.targetsTraining        = []
         self.inputsTest             = []
         self.targetsTest            = []
-        self.dampedSteps            = []
+        self.SLIDESteps            = []
 
         #initialization of hidden layers in RNN (optional)
         self.hiddenInitTraining     = []
@@ -465,16 +483,13 @@ class NeuralNetworkTrainingCenter():
         
         flattenData = self.nnModel.IsFFN()
         
-        modes = ['dampedwindow','training', 'test']
+        modes = ['SLIDEwindow','training', 'test']
         for mode, modeStr in enumerate(modes):
             if self.verboseMode>0:
-                if modeStr == 'dampedwindow': 
-                    print('Calculating the steps for 2 % damped structural deformation')
-                else: 
                     print('create '+modeStr+' data ...')
                     
-            if modeStr == 'dampedwindow': 
-                nData = nTest+nTraining
+            if modeStr == 'SLIDEwindow': 
+                nData = nTraining+nTest
             elif modeStr == 'training':
                  nData = nTraining 
             else: nData = nTest
@@ -486,15 +501,16 @@ class NeuralNetworkTrainingCenter():
             [parameterDict, values] = ParameterVariation(parameterFunction, parameters={'cnt':(0,nData-1,nData)},
                                                          useMultiProcessing=useMultiProcessing and nData>2,
                                                          showProgress=self.verboseMode>0,
-                                                         parameterFunctionData={ 'dampedwindow':modeStr== 'dampedwindow',
+                                                         parameterFunctionData={ 'SLIDEwindow':modeStr== 'SLIDEwindow',
                                                                                 'isTest':mode==2, 
                                                                                 'nSamples':nData,
                                                                                 'showTests':showTests,
-                                                                                'flattenData':flattenData})
+                                                                                'flattenData':flattenData,
+                                                                                'system':system})
     
             for item in values:
-                if modeStr== 'dampedwindow':
-                    self.dampedSteps += [item[3]]
+                if modeStr== 'SLIDEwindow':
+                    self.SLIDESteps += [item[3]]
                     
                 elif modeStr== 'training':
                     self.inputsTraining += [item[0]]
@@ -531,7 +547,7 @@ class NeuralNetworkTrainingCenter():
         self.targetsTraining = np.stack(self.targetsTraining, axis=0)
         self.inputsTest = np.stack(self.inputsTest, axis=0)
         self.targetsTest = np.stack(self.targetsTest, axis=0)
-        self.dampedSteps = np.stack(self.dampedSteps, axis=0)
+        self.SLIDESteps = np.stack(self.SLIDESteps, axis=0)
 
         self.hiddenInitTraining = np.stack(self.hiddenInitTraining, axis=0)
         self.hiddenInitTest = np.stack(self.hiddenInitTest, axis=0)
@@ -559,7 +575,7 @@ class NeuralNetworkTrainingCenter():
         dataDict['targetsTraining'] = self.targetsTraining
         dataDict['inputsTest'] = self.inputsTest
         dataDict['targetsTest'] = self.targetsTest
-        dataDict['dampedSteps'] = self.dampedSteps
+        dataDict['SLIDESteps'] = self.SLIDESteps
         #dataDict['StepPredictor'] = self.StepPredictor
 
         #initialization of hidden layers in RNN (optional)
@@ -612,12 +628,12 @@ class NeuralNetworkTrainingCenter():
             self.nTest = nTest
             
             # Steps from damped oscillations
-            if 'dampedSteps' in dataDict: 
+            if 'SLIDESteps' in dataDict: 
                 
                 
-                self.dampedSteps=int(np.mean(dataDict['dampedSteps']))-5
+                self.SLIDESteps=int(np.mean(dataDict['SLIDESteps']))
                 
-                print(f'Data arrangement using 2 % damped oscillation window={self.dampedSteps}')
+                print(f'Data arrangement using SLIDE window={self.SLIDESteps}')
                 
                 self.inputsTraining     = []
                 self.targetsTraining    = []
@@ -639,10 +655,10 @@ class NeuralNetworkTrainingCenter():
 
 
                 dataPoints       = targetsTraining0.shape[1]            #Per-step approach used in saving data
-                slices           = int(dataPoints // self.dampedSteps)  #Data points devision division based dampedSteps
+                slices           = int(dataPoints // self.SLIDESteps)  #Data points devision division based SLIDESteps
                 
                 # Create data artificially.
-                #slices           = int(dataPoints- self.dampedSteps)
+                #slices           = int(dataPoints- self.SLIDESteps)
                 
                 inputsTraining   = []
                 targetsTraining  = []
@@ -659,19 +675,19 @@ class NeuralNetworkTrainingCenter():
                     
                     InputDataTargets  = []
                     InputDataTraining = []
-                    # Extract each slice based on dampedSteps
+                    # Extract each slice based on SLIDESteps
                     for k in range(slices): 
-                        startIndex0 = (k) * self.dampedSteps
-                        startIndex1 = (k + 1) * self.dampedSteps
+                        startIndex0 = (k) * self.SLIDESteps
+                        startIndex1 = (k + 1) * self.SLIDESteps
                         endIndex    = startIndex1+StepPredictor
                         
                         #startIndex0 = k
-                        #startIndex1 = self.dampedSteps+k
+                        #startIndex1 = self.SLIDESteps+k
                         
                         #print(startIndex0, startIndex1)
                         #endIndex    = startIndex1+StepPredictor
                         
-                        # Extract target data for eacch damped window
+                        # Extract target data for eacch slide window
                         sensTarget = batchTargetTraining0[startIndex1:endIndex]
                     
                         #Sensor layer for each layer
@@ -681,8 +697,8 @@ class NeuralNetworkTrainingCenter():
                         for n, j in enumerate(sensorConfiguration):
                             
                             sensLayer            =  batchInputTraining0[j*dataPoints:(j+1)*dataPoints] # Extract sensor with user configuration
-                            dampedSensor         = sensLayer[startIndex0:startIndex1] # This sensor layer is built on dampedSteps
-                            sensorsLayers        = np.hstack((sensorsLayers, dampedSensor))
+                            SLIDESensor         = sensLayer[startIndex0:startIndex1] # This sensor layer is built on SLIDESteps
+                            sensorsLayers        = np.hstack((sensorsLayers, SLIDESensor))
                                                     
                         if k == 0:
                             InputDataTraining = np.vstack(( sensorsLayers)).T 
@@ -712,17 +728,17 @@ class NeuralNetworkTrainingCenter():
                     
                     InputDataTargets  = []
                     InputDataTraining = []
-                    # Extract each slice based on dampedSteps
+                    # Extract each slice based on SLIDESteps
                     for k in range(slices): 
-                        startIndex0 = (k) * self.dampedSteps
-                        startIndex1 = (k + 1) * self.dampedSteps
+                        startIndex0 = (k) * self.SLIDESteps
+                        startIndex1 = (k + 1) * self.SLIDESteps
                         endIndex    = startIndex1+StepPredictor
                         
                         #startIndex0 = k
-                        #startIndex1 = self.dampedSteps+k
+                        #startIndex1 = self.SLIDESteps+k
                         #endIndex    = startIndex1+StepPredictor
                         
-                        # Extract target data for eacch damped window
+                        # Extract target data for eacch SLIDE window
                         sensTarget = batchTargetTest0[startIndex1:endIndex]
                     
                         #Sensor layer for each layer
@@ -731,8 +747,8 @@ class NeuralNetworkTrainingCenter():
                         # Extract sensor data for each batch 
                         for n, j in enumerate(sensorConfiguration):
                             sensLayer            =  batchInputTest0[j*dataPoints:(j+1)*dataPoints] # Extract sensor with user configuration
-                            dampedSensor         = sensLayer[startIndex0:startIndex1] # This sensor layer is built on dampedSteps
-                            sensorsLayers        = np.hstack((sensorsLayers, dampedSensor))
+                            SLIDESensor          = sensLayer[startIndex0:startIndex1] # This sensor layer is built on SLIDESteps
+                            sensorsLayers        = np.hstack((sensorsLayers, SLIDESensor))
                                                     
                         if k == 0:
                             InputDataTraining = np.vstack((sensorsLayers)).T 

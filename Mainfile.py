@@ -20,9 +20,9 @@ import numpy as np
 import time
 import os
 
-from Models.FlexibleMultibody import NNHydraulics
+from Models.ModelNN import NNHydraulics
 
-os.environ['OMP_NUM_THREADS'] = '4' 
+os.environ['OMP_NUM_THREADS'] = '1' 
 
 timeStep    = 5e-3              #Simulation time step: Change it as desired.
 T           = 10               #Time period
@@ -41,7 +41,7 @@ model       = NNHydraulics(nStepsTotal=ns, endTime=T, Flexible=True,
                       visualization  = False,
                       verboseMode=1)
 
-inputVec    =model.CreateInputVector( ns,  angleInit1,angleInit2 )
+inputVec    =model.InputVector_Simulation( ns,  angleInit1,angleInit2 )
 data = model.ComputeModel(inputVec, solutionViewer = True) #solutionViewer: for visualization
 
 data_array = np.array(data, dtype=object)

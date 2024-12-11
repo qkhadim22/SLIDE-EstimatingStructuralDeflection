@@ -9,7 +9,6 @@
 # Copyright:This file is part of Exudyn. Exudyn is free software. You can redistribute it and/or modify it under the terms of the Exudyn license. See 'LICENSE.txt' for more details.
 #
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# %%
 import exudyn as exu
 from exudyn.utilities import *
 # from exudyn.signalProcessing import GetInterpolatedSignalValue
@@ -40,23 +39,26 @@ from torch.utils.data import TensorDataset, DataLoader
 torch.set_num_threads(1)
 
 useCUDA = torch.cuda.is_available()
-useCUDA = False #CUDA support helps for fully connected networks > 256
+useCUDA = True #CUDA support helps for fully connected networks > 256
 
 if __name__ == '__main__': #include this to enable parallel processing
     print('pytorch cuda=',useCUDA)
 
 #%%++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-#for creating data, set createData = True
-createData  =True #activate this to create new training and test data sets
 
-runParallel =  False  #parallel data set creation (loads your computer heavily!)
+
+#for creating data, set createData = True
+createData      =   False       #activate this to create new training and test data sets
+runParallel     =   True       #parallel data set creation (loads your computer heavily!)
+Patu            =   False       #Cases TwoArms (Patu), OneArm (LiftBoom) set Patu = True for TwoArms
+parameterVariation  = True      #in case of True, we can perform parameter variation for hyperparameters (untested for hydraulics)
+
 
 #80 % data is provided for training and 20 % data is provided for validation (nTest)
-nTraining           =1*8 #number of training samples to be used, 256*8
-nTest               =1*2  #number of test samples for evaluation--validation
+nTraining           =128*8 #number of training samples to be used, 256*8
+nTest               =128*2  #number of test samples for evaluation--validation
 sensorsConfig       = [0,2] # 
-parameterVariation  = False  #in case of True, we can perform parameter variation for hyperparameters (untested for hydraulics)
 # runParallel         = False
 #%%++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 listNLOSC=['hydraulics']#, '5mass']
@@ -70,9 +72,9 @@ if __name__ == '__main__':
 #put this part out of if __name__ ... if you like to use multiprocessing
 
 endTime=1           #total simulation time of training/test data
-nStepsTotal=200*1     #number of steps used for training/test data
+nStepsTotal=200*endTime     #number of steps used for training/test data
 ReD   = 3.35e-3 #.45, 2
-LiftLoad = 50
+LiftLoad = 100
 
 
 #endTime=1*2*2           #total simulation time of training/test data
@@ -83,8 +85,9 @@ model = NNHydraulics(nStepsTotal=nStepsTotal, endTime=endTime,
                      nnType=nnType, 
                      ReD   = ReD,
                      mL    = LiftLoad,
-                     Flexible = True,
                      loadFromSavedNPY=True, #if data is not available, set this to false for first (serial run)    #activate this to find history window for damped oscillationns
+                     visualization = False,
+                     system=Patu,
                      verboseMode=1)
 
 nntc = NeuralNetworkTrainingCenter(nnModel=model, computeDevice='cuda' if useCUDA else 'cpu',
@@ -93,8 +96,13 @@ SLIDE.fnnLib.moduleNntc = nntc #this informs the module about the NNTC (multipro
 
 #%%++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 #in this section we create or load data
-dataFile = 'data/PATU'+nnType+'T'+str(nTraining)+'-'+str(nTest)+'s'+str(nStepsTotal)+\
+if  Patu:
+    dataFile = 'data/PATU/'+nnType+'T'+str(nTraining)+'-'+str(nTest)+'s'+str(nStepsTotal)+\
                 't'+str(endTime)+'ReD'+str(ReD)+'Load'+str(LiftLoad)
+else: 
+    dataFile = 'data/LiftBoom/'+nnType+'T'+str(nTraining)+'-'+str(nTest)+'s'+str(nStepsTotal)+\
+                   't'+str(endTime)+'ReD'+str(ReD)+'Load'+str(LiftLoad)
+
                 
 
 if __name__ == '__main__': #include this to enable parallel processing
@@ -111,6 +119,7 @@ if __name__ == '__main__': #include this to enable parallel processing
             parameterFunction=PVCreateData
         nntc.CreateTrainingAndTestData(nTraining=nTraining, nTest=nTest,
                                        parameterFunction=PVCreateData, #for multiprocessing, uses all threads available
+                                       system=Patu, 
                                        #showTests=[0], #run SolutionViewer for this test
                                        )
         nntc.SaveTrainingAndTestsData(dataFile)
@@ -120,20 +129,11 @@ if __name__ == '__main__': #include this to enable parallel processing
 if not createData and not parameterVariation:
 # %%
     nntc.LoadTrainingAndTestsData(dataFile, 
-
                                   nTraining=nTraining, nTest=nTest, 
                                   sensorConfiguration=sensorsConfig, 
                                   StepPredictor=1,
                                   #these values must be in the range of available data!
                                   )
-
-# #%%
-# #check created training or test data:
-# for j in range(50):
-#     data=nntc.GetNNModel().OutputData2PlotData(nntc.targetsTraining[j])
-#     nntc.GetNNModel().mbs.PlotSensor([data],components=[1], newFigure=j==0)
-# #%%
-
 
 #%%++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 if __name__ == '__main__': #include this to enable parallel processing
@@ -148,47 +148,36 @@ if __name__ == '__main__': #include this to enable parallel processing
     #%%++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     if parameterVariation:
         
+        # Liftboom: Sensor combination ([2]= [0, 1]) indicates U and s.
+        # Liftboom: Sensor combination ([30]= [0, 1]) indicates U, s, dots, p1 and p2.
+        
+        # PATU Crane: Sensor combination ([14]= [0, 1, 2, 3]) indicates U1,U2, s1 and s2.
+        # PATU Crane:: Sensor combination ([1022]= [0, 1, 2, 3, 4,5, 6, 7, 8,9]) 
+        #indicates U1,U2, s1, s2, dots1, dots2, p1, p2, p3 and p4.
+        
         if nnType == 'FFN':
             functionData = {'maxEpochs':1000, #for linear 1mass, 5mass, friction: 2500 is alredy very good
-                            #'nTraining':64,
                             'nTest':nTest,
-                            'lossThreshold':5e-5,
+                            'lossThreshold':2.5e-5,
                             'lossLogInterval':20,
                             'testEvaluationInterval':1,
                             'nTraining':nTraining,
                             'neuralNetworkType':int(nnType=='FFN'), #0=RNN, 1=FFN
-                            # 'hiddenLayerSize':128,
-                            # 'hiddenLayerStructureType': 6,
                             'rnnNonlinearity': 'tanh',
                             'batchSize':int(nTraining/8),
-                            # nntc.inputData --> [nTraining, nTime*nSensors]
-                            # nntc.nnModel(nntc.inputData)
-                            # in training loop dataloader [nBatch, nTime*nSensor]
-                            # in each epoch: nTraining//nBatch gradient decents
                             'dataLoaderShuffle':True,
                             'storeModelName':storeModelName,
                             'modelName':model.GetModelName(),
                             'dataFile':dataFile,
+                            'system': Patu
                             } #additional parameters
             parameters = {
-                          'learningRate':[1e-3], # best one[ 0, 11, 12, 17, 25]
-                          # 'batchSize':[32], 
-                          #good: BS32-10, BS32-6, [0,11, 12, 13,15,16, 25, 28],, 0, 13,17, 25
-                          #not:0,1,7
-                          #very good: TS1024, BS128, 12, HLS128, 0,7,8, 9, 10, 11,13,21,22
-                          #  0    1     2     3     4     5     6      7      8        9      10      11       12        13     14      15        16          17,       18
-                          #['L', 'LL', 'RL', 'LR', 'SL', 'LS', 'LRL', 'LLL', 'LRLRL', 'LLR', 'LLRL', 'LLLRL', 'LLRLRL', 'LLLL', 'LRdL', 'LdLRdL', 'LLRdLRdL', 'LLLRLRL', '' ]
-                          #'hiddenLayerStructureType':[0,7,8, 9, 10, 11], # [2,6,7,9,10], [0, 1,3,5,6,7 ], [0,3,7,9, 20]
-                          'hiddenLayerStructureType':[0, 11, 12, 17, 25], #0,7,8,9,13,14, 15, 31, 0,14, 15, 16,17
-                          'hiddenLayerSize':[124], #larger is better; 4: does not work at all; 'RL' with 8 works a bit
+                          'learningRate':[1e-3], # best one[ 0, 11, 12, 17, 25]. 14 (4 sensors) and 1022 (all sensors)[0, 11, 12, 17, 25]
+                          'hiddenLayerStructureType':[0], #0,7,8,9,13,14, 15, 31, 0,14, 15, 16,17
+                          'hiddenLayerSize':[29*2], #larger is better; 4: does not work at all; 'RL' with 8 works a bit
                           'case':[1], #randomizer
                           'stepPredictor': [1] , #[0, 49, 14,19, 24]
-                          'sensorType': [4 ], #[30, 14]
-                          # SensorConfig [[0], [1], [0, 1], [2], [0, 2], [1, 2], [0, 1, 2], [3], [0, 3], [1, 3], [0, 1, 3], [2, 3], [0, 2, 3], [1, 2, 3], [0, 1, 2, 3], 
-                          # [4], [0, 4], [1, 4], [0, 1, 4], [2, 4], [0, 2, 4], [1, 2, 4], [0, 1, 2, 4], [3, 4], [0, 3, 4], [1, 3, 4], [0, 1, 3, 4], [2, 3, 4], 
-                          # [0, 2, 3, 4], [1, 2, 3, 4], [0, 1, 2, 3, 4]]
-                          #'nTraining':[64,256],     #larger is better (512)
-                          #'hiddenLayerSize':[16,32,64,128],
+                          'sensorType': [2 ], #[30, 14]
                           }
         else: #RNN
             functionData = {'maxEpochs':500*4, #for linear 1mass, 5mass, friction: 2500 is alredy very good
@@ -209,14 +198,7 @@ if __name__ == '__main__': #include this to enable parallel processing
                             'dataFile':dataFile,
                             } #additional parameters
             parameters = {
-                          #'learningRate':(1e-3,4e-3,4),
-                          # 'batchSize':[64], 
-                          #  0    1     2     3     4     5     6      7      8        9      10      11       12        13     14      15        16          17
-                          #['L', 'LL', 'RL', 'LR', 'SL', 'LS', 'LRL', 'LLL', 'LRLRL', 'LLR', 'LLRL', 'LLLRL', 'LLRLRL', 'LLLL', 'LRdL', 'LdLRdL', 'LLRdLRdL', 'LLLRLRL']
-                          #'hiddenLayerStructureType':[6,10,11],# [2,6,7,9,10], 
                           'hiddenLayerSize':[32], #larger is better; 4: does not work at all; 'RL' with 8 works a bit
-                          #'case':[0,1], #randomizer
-                          #'nTraining':[64,256],     #larger is better (512)
                           }
         tStart = time.time()
         #mp.set_start_method('spawn')
@@ -227,9 +209,7 @@ if __name__ == '__main__': #include this to enable parallel processing
                                                      parameters=parameters,
                                                      useMultiProcessing=True,
                                                      #numberOfThreads=6,
-# %%
                                                      resultsFile=resultsFile+'.txt', 
-
                                                      addComputationIndex=True, # necessary for seed
                                                       # useMPI = True, 
                                                      parameterFunctionData=functionData)
@@ -288,7 +268,7 @@ if __name__ == '__main__': #include this to enable parallel processing
         nntc.verboseMode=1
         hiddenLayerStructure=''
         
-        Training = False
+        Training = True
 
         #FFN:
         if Training:
