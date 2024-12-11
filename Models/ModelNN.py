@@ -84,6 +84,7 @@ pS              = 140e5
 pT              = 1e5                           # Tank pressure
 Qn1             = (18/60000)/((9.9)*sqrt(35e5))                      # Nominal flow rate of valve at 18 l/min under
 Qn2             = (35/60000)/((9.9)*sqrt(35e5))                      # Nominal flow rate of valve at 18 l/min under
+Qn               = 1.667*10*2.1597e-08                     # Nominal flow rate of valve at 18 l/min under
 
 # Cylinder and piston parameters
 L_Cyl1          = 820e-3                            # Cylinder length
@@ -167,8 +168,8 @@ class NNHydraulics():
         self.p1Init = 7e6
         self.p2Init = 7e6
         
-        self.angleMinDeg1 = -15
-        self.angleMaxDeg1 = 45
+        self.angleMinDeg1 = -10
+        self.angleMaxDeg1 = 50
         
         self.angleMinDeg2 = -65
         self.angleMaxDeg2 = 0
@@ -626,15 +627,11 @@ class NNHydraulics():
 
         self.theta1 = theta1
         self.p1     = p1
-        self.p2     = p2                         #Pressure_RigidModel(theta1, p1, p2)
-        
-        # print('theta1, p1, p2=', theta1, p1, p2)
-        
+        self.p2     = p2                         
         self.dictSensors = {}
         
         self.StaticInitialization = True
     
-        #print(rigid_data)
         #Ground body
         oGround         = self.mbs.AddObject(ObjectGround())
         markerGround    = self.mbs.AddMarker(MarkerBodyRigid(bodyNumber=oGround, localPosition=[0, 0, 0]))
@@ -667,30 +664,16 @@ class NNHydraulics():
         # Fixed joint between Pillar and Ground
         self.mbs.AddObject(GenericJoint(markerNumbers=[markerGround, Marker3],constrainedAxes=[1, 1, 1, 1, 1, 1],
         visualization=VObjectJointGeneric(axesRadius=0.2*W1,axesLength=1.4*W1)))
-
-
-
         
         filePath        = '' #To load fine mesh data from Abaqus
         folder_name     = os.path.join(filePath, f"theta1_{self.theta1:.2f}")
-      
-        
-        # if theta1== -27.227343749651500 or U==None:
-        #     U                =  DataU[0, :]
-        # elif theta1 >= 0:
-        #    Input             = scipy.io.loadmat('Pos_Angle_U')
-        #    Signal            = Input['U1']
-        #    U                 =  Signal[0, :]
-        # else:
-        #    Input             = scipy.io.loadmat('Neg_Angle_U')
-        #    Signal            = Input['U1']
-        #    U                 =  Signal[0, :]
-                
+
         fileNameL       = 'ABAQUS/LiftBoom/OneArm/liftboom-free-050623' #To load fine mesh data from Abaqus
     
         if not self.loadFromSavedNPY: 
             start_time                      = time.time()
-            nodes                           = feL.ImportFromAbaqusInputFile(fileNameL+'.inp', typeName='Part', name='P000524_A_1-Nostopuomi_v2_fem_st')
+            nodes                           = feL.ImportFromAbaqusInputFile(fileNameL+'.inp', typeName='Part', 
+                                                                            name='P000524_A_1-Nostopuomi_v2_fem_st')
             feL.ReadMassMatrixFromAbaqus(fileName=fileNameL + '_MASS2.mtx')             #Load mass matrix
             feL.ReadStiffnessMatrixFromAbaqus(fileName=fileNameL + '_STIF2.mtx')        #Load stiffness matrix
             feL.SaveToFile(fileNameL)
@@ -716,9 +699,7 @@ class NNHydraulics():
         pJoint1             = feL.GetNodePositionsMean(nodeListJoint1)
         nodeListJoint1Len   = len(nodeListJoint1)
         noodeWeightsJoint1  = [1/nodeListJoint1Len]*nodeListJoint1Len
-        #print('list1=',noodeWeightsJoint1)
         noodeWeightsJoint1  =feL.GetNodeWeightsFromSurfaceAreas(nodeListJoint1)
-        #print('list2=',noodeWeightsJoint1)
            
         # Boundary condition at Piston 1
         p4                  = [0.3025,-0.1049,-10e-2]
@@ -728,24 +709,8 @@ class NNHydraulics():
         pJoint2             = feL.GetNodePositionsMean(nodeListPist1)
         nodeListPist1Len    = len(nodeListPist1)
         noodeWeightsPist1   = [1/nodeListPist1Len]*nodeListPist1Len
-    
-       
-        #print('list2=',noodeWeightsJoint1)
-    
-    
-        # # Joint 3
-        # p10                 = [2.829,0.0151500003,-0.074000001]       #2.829, 0.0151500003,  0.074000001; 2.89,0.0246,-7.4e-2
-        # p9                  = [2.829,0.0151500003, 0.074000001]
-        # pdef                = [2.829,0.0151500003, 0]
-        # radius5             = 0.5e-002
-        # nodeListJoint3      = feL.GetNodesOnCylinder(p9, p10, radius5, tolerance=1e-2)  
-        # pJoint5             = feL.GetNodePositionsMean(nodeListJoint3)
-        # nodeListJoint3Len   = len(nodeListJoint3)
-        # noodeWeightsJoint3  = [1/nodeListJoint3Len]*nodeListJoint3Len
         
         if self.mL != 0:
-            # Joint 3
-            # Joint 3
             p10                 = [2.89,0.0246,-7.4e-2]
             p9                  = [2.89,0.0246, 7.4e-2]
             pdef                = [2.89,0.0246, 0]
@@ -780,9 +745,7 @@ class NNHydraulics():
         colLift = color4blue
        
         LiftBoom            = ObjectFFRFreducedOrderInterface(feL)
-    
-    
-    
+        
         LiftBoomFFRF        = LiftBoom.AddObjectFFRFreducedOrder(self.mbs, positionRef=np.array([-0.09, 1.4261, 0]), 
                                           initialVelocity=[0,0,0], 
                                           initialAngularVelocity=[0,0,0],
@@ -814,7 +777,7 @@ class NNHydraulics():
             
             pos = self.mbs.GetMarkerOutput(Marker9, variableType=exu.OutputVariableType.Position, configuration=exu.ConfigurationType.Reference)
             #print('pos=', pos)
-            bMass = self.mbs.CreateMassPoint(physicsMass=self.mL, referencePosition=pos, show=True,
+            bMass = self.mbs.CreateMassPoint(physicsMass=self.mL, referencePosition=pos, show=True, gravity=g,
                                      graphicsDataList=[GraphicsDataSphere(radius=0.04, color=color4red)])
             mMass = self.mbs.AddMarker(MarkerBodyPosition(bodyNumber=bMass))
             self.mbs.AddObject(SphericalJoint(markerNumbers=[Marker9, mMass], visualization=VSphericalJoint(show=False)))
@@ -831,15 +794,18 @@ class NNHydraulics():
                                                     self.p2], #initialize with 20 bar
                                 numberOfODE1Coordinates=2))
     
-    
+        #Not used
         def CylinderFriction1(mbs, t, itemNumber, u, v, k, d, F0):
 
                 Ff = 1*StribeckFunction(v, muDynamic=1, muStaticOffset=1.5, regVel=1e-4)+(k*(u) + d*v + k*(u)**3-F0)
                 #print(Ff)
                 return Ff
+            
+        def UFfrictionSpringDamper(mbs, t, itemIndex, u, v, k, d, f0):
+            return   1*(Fc*tanh(4*(abs(v    )/vs))+(Fs-Fc)*((abs(v    )/vs)/((1/4)*(abs(v    )/vs)**2+3/4)**2))*np.sign(v )+sig2*v    *tanh(4)
           
             
-        oFriction1       = self.mbs.AddObject(ObjectConnectorSpringDamper(markerNumbers=[Marker5, Marker8], referenceLength=0,stiffness=2000,
+        oFriction1       = self.mbs.AddObject(ObjectConnectorSpringDamper(markerNumbers=[Marker5, Marker8], referenceLength=0.001,stiffness=2000,
                                                             damping=5000, force=80, velocityOffset = 0., activeConnector = True,
                                                             springForceUserFunction=CylinderFriction1,
                                                               visualization=VSpringDamper(show=False) ))
@@ -850,7 +816,7 @@ class NNHydraulics():
                                                     nodeNumbers=[nODE1], offsetLength=L_Cyl1, strokeLength=L_Pis1, chamberCrossSection0=A[0], 
                                                     chamberCrossSection1=A[1], hoseVolume0=V1, hoseVolume1=V2, valveOpening0=0, 
                                                     valveOpening1=0, actuatorDamping=4.2e5, oilBulkModulus=Bo, cylinderBulkModulus=Bc, 
-                                                    hoseBulkModulus=Bh, nominalFlow=Qn1, systemPressure=pS, tankPressure=pT, 
+                                                    hoseBulkModulus=Bh, nominalFlow=Qn, systemPressure=pS, tankPressure=pT, 
                                                     useChamberVolumeChange=True, activeConnector=True, 
                                                     visualization={'show': True, 'cylinderRadius': 50e-3, 'rodRadius': 28e-3, 
                                                                     'pistonRadius': 0.04, 'pistonLength': 0.001, 'rodMountRadius': 0.0, 
@@ -1806,8 +1772,9 @@ class NNHydraulics():
         
         
         #Assumptions
-        threshold_deflection    = 0.02*np.max(np.abs(self.deflection[0:self.nStepsTotal,1]))
-        min_consecutive_steps   = int(0.15*self.nStepsTotal)
+        # threshold_deflection    = 0.20*np.max(np.abs(self.deflection[0:self.nStepsTotal,1]))
+        threshold_deflection    = 1.05*np.mean((self.deflection[0:self.nStepsTotal,1]))
+        min_consecutive_steps   = int(0.10*self.nStepsTotal)
         consecutive_count       = 0
         SLIDE_time              = 0
         
@@ -1815,7 +1782,7 @@ class NNHydraulics():
                             #SLIDE Computing#
         ##################################################################
         for i in range(len(self.deflection[:,1])):
-                if abs(self.deflection[i, 1]) < threshold_deflection:
+                if (self.deflection[i, 1]) < threshold_deflection:
                     consecutive_count += 1
                     
                     if consecutive_count == 1: 
@@ -1894,7 +1861,7 @@ class NNHydraulics():
            ax.set_xlim(0, 1)
            # Set ticks
            ax.set_xticks(np.linspace(0, 1, 6))
-           ax.set_yticks(np.linspace(-5, 5, 6))
+           ax.set_yticks(np.linspace(-10, 10, 6))
            ax.tick_params(axis='both', labelsize=8)  # Change 8 to the desired font size
            # Enable grid and legend
            ax.grid(True)

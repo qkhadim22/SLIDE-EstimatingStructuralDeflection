@@ -49,15 +49,15 @@ if __name__ == '__main__': #include this to enable parallel processing
 
 
 #for creating data, set createData = True
-createData      =   False       #activate this to create new training and test data sets
+createData      =   True       #activate this to create new training and test data sets
 runParallel     =   True       #parallel data set creation (loads your computer heavily!)
 Patu            =   False       #Cases TwoArms (Patu), OneArm (LiftBoom) set Patu = True for TwoArms
 parameterVariation  = True      #in case of True, we can perform parameter variation for hyperparameters (untested for hydraulics)
 
 
 #80 % data is provided for training and 20 % data is provided for validation (nTest)
-nTraining           =128*8 #number of training samples to be used, 256*8
-nTest               =128*2  #number of test samples for evaluation--validation
+nTraining           =1*1 #number of training samples to be used, 256*8
+nTest               =1*1  #number of test samples for evaluation--validation
 sensorsConfig       = [0,2] # 
 # runParallel         = False
 #%%++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
