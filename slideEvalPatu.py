@@ -51,7 +51,7 @@ if __name__ == '__main__': #include this to enable parallel processing
 #for creating data, set createData = True
 createData      =   True       #activate this to create new training and test data sets
 runParallel     =   True       #parallel data set creation (loads your computer heavily!)
-Patu            =   False       #Cases TwoArms (Patu), OneArm (LiftBoom) set Patu = True for TwoArms
+Patu            =   True       #Cases TwoArms (Patu), OneArm (LiftBoom) set Patu = True for TwoArms
 parameterVariation  = True      #in case of True, we can perform parameter variation for hyperparameters (untested for hydraulics)
 
 
@@ -85,6 +85,7 @@ model = NNHydraulics(nStepsTotal=nStepsTotal, endTime=endTime,
                      nnType=nnType, 
                      ReD   = ReD,
                      mL    = LiftLoad,
+                     Flexible= True,
                      loadFromSavedNPY=True, #if data is not available, set this to false for first (serial run)    #activate this to find history window for damped oscillationns
                      visualization = False,
                      system=Patu,

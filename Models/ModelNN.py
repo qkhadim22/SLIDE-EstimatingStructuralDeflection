@@ -129,7 +129,7 @@ feT             = FEMinterface()
 class NNHydraulics():
 
     #initialize class 
-    def __init__(self, nStepsTotal=100, endTime=0.5, ReD = 3.35e-3, mL= 50, nnType='FFN',
+    def __init__(self, nStepsTotal=100, endTime=0.5, ReD = 3.35e-3, mL= 50, nnType='FFN', Flexible=True,
                  nModes = 2, 
                  loadFromSavedNPY=True,
                  visualization = False,
@@ -143,6 +143,7 @@ class NNHydraulics():
         self.nnType = nnType
         self.endTime = endTime
         self.useFriction = useFriction
+        self.Flexible = Flexible
         
         #+++++++++++++++++++++++++++++
         #from hydraulics:
@@ -1029,7 +1030,7 @@ class NNHydraulics():
                                      position=PillarP,
                                      rotationMatrix=np.diag([1, 1, 1]),
                                      gravity=g,
-                                     graphicsDataList=[graphicsCOM1, graphicsBody1]
+                                     #graphicsDataList=[graphicsCOM1, graphicsBody1]
                                      )
         
         #Pillar
@@ -1838,25 +1839,25 @@ class NNHydraulics():
            ax.plot(Time, 1000*self.deflection[:,1], color='gray')
            ax.set_xlabel('Time, s', fontdict={'family': 'Times New Roman', 'size': 10})
            ax.set_ylabel(r'${\delta}_y$, mm', fontdict={'family': 'Times New Roman', 'size': 10})
-           ax.text(0.34 + 0.16, 1.525, r'${{\delta}_y}^{*}$', horizontalalignment='center', color='black', fontsize=10, 
+           ax.text(SLIDE_time + 0.16, 1.525, r'${{\delta}_y}^{*}$', horizontalalignment='center', color='black', fontsize=10, 
                      bbox=dict(facecolor='white', edgecolor='black', pad=4.0))
-           ax.axvline(0.34, color='red', alpha=0.5, linestyle='-.', linewidth=2, label='Midpoint of Open')
-           ax.axvspan(0, 0.34, ymin = 0, ymax = 1, color='lightgreen', 
+           ax.axvline(SLIDE_time, color='red', alpha=0.5, linestyle='-.', linewidth=2, label='Midpoint of Open')
+           ax.axvspan(0, SLIDE_time, ymin = 0, ymax = 1, color='lightgreen', 
                        alpha=0.2, label='Spool open')            
-           ax.text(0.1, 2.60, r'$t_d$', horizontalalignment='center', color='black', fontsize=10, 
+           ax.text(SLIDE_time/2, 10*0.75, r'$t_d$', horizontalalignment='center', color='black', fontsize=10, 
                         bbox=dict(facecolor='white', edgecolor='black', pad=4.0))
            ax.annotate('',                      # no text
-                        xy=(0.343, 3.8),         # head of the arrow (end point)
-                        xytext=(-0.003, 3.8),        # tail of the arrow (start point)
+                        xy=(SLIDE_time+0.005, 10*0.6),         # head of the arrow (end point)
+                        xytext=(-0.003, 10*0.6),        # tail of the arrow (start point)
                         arrowprops=dict(arrowstyle="<->", color='black', lw=2))
-           center_x, center_y = 0.34, 0.47162  # These replace your damped_time -0.52
+           center_x, center_y = SLIDE_time, threshold_deflection*1000 
            width, height = 0.02, 0.18  # Size of the rectangle, adjust as necessary
            rectangle = Rectangle((center_x - width / 2, center_y - height / 2), width, height,
                                   edgecolor='black', facecolor='black', fill=True)
            ax.add_patch(rectangle)
            ax.annotate('',  # No text, just the arrow
                         xy=(center_x, center_y),  # Arrow points to the center of the rectangle
-                        xytext=(0.458, 1.525),  # Starting point of the arrow at text location
+                        xytext=(SLIDE_time+0.118, 1.525),  # Starting point of the arrow at text location
                         arrowprops=dict(arrowstyle="->", color='black'))
            ax.set_xlim(0, 1)
            # Set ticks
@@ -1867,7 +1868,7 @@ class NNHydraulics():
            ax.grid(True)
            # Adjust layout and save the figure
            plt.tight_layout()
-           plt.savefig('SLIDE/LiftBoom/TestDef_Plot.png', format='png', dpi=300)
+           plt.savefig(f'SLIDE/LiftBoom/TestDef_Plot_{self.mL}.png', format='png', dpi=300)
            plt.show()
             
         else:
@@ -1929,46 +1930,39 @@ class NNHydraulics():
 
             # Deflection
             fig, ax = plt.subplots(figsize=(a40_width_inches, a40_height_inches))
-            ax.plot(Time, 1000*self.deflection[:,1] , color='gray')
+            ax.plot(Time, 1000*self.deflection[:,1], color='gray')
             ax.set_xlabel('Time, s', fontdict={'family': 'Times New Roman', 'size': 10})
             ax.set_ylabel(r'${\delta}_y$, mm', fontdict={'family': 'Times New Roman', 'size': 10})
-            ax.text(0.34 + 0.16, 0.80, r'${{\delta}_y}^{*}$', horizontalalignment='center', color='black', fontsize=10, 
-                     bbox=dict(facecolor='white', edgecolor='black', pad=4.0))
-            ax.axvline(0.34, color='red', alpha=0.5, linestyle='-.', linewidth=2, label='Midpoint of Open')
-        
-            ax.axvspan(0, 0.34, ymin = 0, ymax = 1, color='lightgreen', 
-                       alpha=0.2, label='Spool open')
-            
-            ax.text(0.1, 0.60, r'$t_d$', horizontalalignment='center', color='black', fontsize=10, 
+            ax.text(SLIDE_time + 0.16, 1.525, r'${{\delta}_y}^{*}$', horizontalalignment='center', color='black', fontsize=10, 
                         bbox=dict(facecolor='white', edgecolor='black', pad=4.0))
-            
+            ax.axvline(SLIDE_time, color='red', alpha=0.5, linestyle='-.', linewidth=2, label='Midpoint of Open')
+            ax.axvspan(0, SLIDE_time, ymin = 0, ymax = 1, color='lightgreen', 
+                          alpha=0.2, label='Spool open')            
+            ax.text(SLIDE_time/2, 10*0.75, r'$t_d$', horizontalalignment='center', color='black', fontsize=10, 
+                           bbox=dict(facecolor='white', edgecolor='black', pad=4.0))
             ax.annotate('',                      # no text
-                        xy=(0.343, 0.85),         # head of the arrow (end point)
-                        xytext=(-0.003, 0.85),        # tail of the arrow (start point)
-                        arrowprops=dict(arrowstyle="<->", color='black', lw=2))
-            
-            center_x, center_y = 0.34, 0.47162  # These replace your damped_time, -0.52
+                           xy=(SLIDE_time+0.005, 10*0.6),         # head of the arrow (end point)
+                           xytext=(-0.003, 10*0.6),        # tail of the arrow (start point)
+                           arrowprops=dict(arrowstyle="<->", color='black', lw=2))
+            center_x, center_y = SLIDE_time, threshold_deflection*1000  # These replace your damped_time -0.52
             width, height = 0.02, 0.18  # Size of the rectangle, adjust as necessary
-
             rectangle = Rectangle((center_x - width / 2, center_y - height / 2), width, height,
-                                  edgecolor='black', facecolor='black', fill=True)
+                                     edgecolor='black', facecolor='black', fill=True)
             ax.add_patch(rectangle)
-            
             ax.annotate('',  # No text, just the arrow
-                        xy=(center_x, center_y),  # Arrow points to the center of the rectangle
-                        xytext=(0.458, 0.525),  # Starting point of the arrow at text location
-                        arrowprops=dict(arrowstyle="->", color='black'))
+                           xy=(center_x, center_y),  # Arrow points to the center of the rectangle
+                           xytext=(SLIDE_time+0.118, 1.525),  # Starting point of the arrow at text location
+                           arrowprops=dict(arrowstyle="->", color='black'))
             ax.set_xlim(0, 1)
-            ax.set_ylim(-1, 1)
             # Set ticks
             ax.set_xticks(np.linspace(0, 1, 6))
-            ax.set_yticks(np.linspace(-1, 1, 6))
+            ax.set_yticks(np.linspace(-10, 10, 6))
             ax.tick_params(axis='both', labelsize=8)  # Change 8 to the desired font size
             # Enable grid and legend
             ax.grid(True)
             # Adjust layout and save the figure
             plt.tight_layout()
-            plt.savefig('SLIDE/PATU/SLIDE_deflection_Plot.png', format='png', dpi=300)
+            plt.savefig(f'SLIDE/PATU/SLIDE_PATUDef_Plot_{self.mL}.png', format='png', dpi=300)
             plt.show()
                 
         return self.n_td
