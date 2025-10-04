@@ -1,3 +1,17 @@
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# This is an EXUDYN example
+#
+# Details:  Generate training data for hydraulically actuated 3D FFRF reduced order model with 2 flexible bodies.
+#           It includes lift boom (1 DOF) and Patu crane (2-DOF) systems.
+#           For closed loop configurations, coordinate partioning method is used.             
+#
+# Author:   Qasim Khadim,Johannes Gerstmayr
+# Date:     2025-06-23
+#
+# Copyright:This file is part of Exudyn. Exudyn is free software. You can redistribute 
+#it and/or modify it under the terms of the Exudyn license. See 'LICENSE.txt' for more details.
+#+++++++++++++++++++++++++++0++++++++++++++++++++++++++++++++++++++++++++++++++
+
 from models.container import *
 from models.compute_SLIDE import *
 
@@ -17,7 +31,8 @@ class ExudynFlexible():
         self.nStepsTotal        = nStepsTotal
         self.endTime            = endTime
         self.TimeStep           = self.endTime / (self.nStepsTotal) 
-        self.verboseMode        = False     
+        self.verboseMode        = False    
+        self.nModes             = nModes
         self.dictSensors        = dictSensors
     
     #get number of simulation steps
@@ -27,7 +42,7 @@ class ExudynFlexible():
     # Materials are defined.   
     def Materials (self):
         if self.Material=='Steel':
-             Emodulus,nu,rho     = 2.1e11,0.28, 7800
+             Emodulus,nu,rho     = 2.1e11,0.3, 7850
              filePath            = 'AbaqusMesh/LiftBoom/Steel/Job-1'
              filePath0           = 'AbaqusMesh/LiftBoom/Steel'
              filePath2           = 'AbaqusMesh/TiltBoom/Steel/Job-1'
@@ -161,19 +176,20 @@ class ExudynFlexible():
         start_time          = time.time()
         if self.loadFromSavedNPY:
            if self.mL != 0:
-               feL.LoadFromFile(self.filePath0+'/feL_Load',mode='PKL')
+               feL.LoadFromFile(f"{self.filePath0}/feL_Load_Modes{self.nModes}", mode='PKL')
            else:
-               feL.LoadFromFile(self.filePath0+'/feL',mode='PKL')
+              feL.LoadFromFile(f"{self.filePath0}/feL_Modes{self.nModes}", mode='PKL')
+
         else:
          feL.ComputeHurtyCraigBamptonModes(boundaryNodesList=boundaryList, nEigenModes=self.nModes, useSparseSolver=True,computationMode = HCBstaticModeSelection.RBE2) 
          
          print("ComputePostProcessingModes ... (may take a while)")
-         feL.ComputePostProcessingModes(material=mat,outputVariableType=self.varType,)
+         feL.ComputePostProcessingModes(material=self.mat,outputVariableType=self.varType,)
         
          if self.mL != 0:  
-             feL.SaveToFile(self.filePath0+'/feL_Load', mode='PKL')
+             feL.SaveToFile(f"{self.filePath0}/feL_Load_Modes{self.nModes}", mode='PKL')
          else:
-             feL.SaveToFile(self.filePath0+'/feL', mode='PKL')
+             feL.SaveToFile(f"{self.filePath0}/feL_Modes{self.nModes}", mode='PKL')
              
          if self.verboseMode:
            print("Hurty-Craig Bampton modes... ")
@@ -292,11 +308,11 @@ class ExudynFlexible():
         # Add Sensor for deflection
         deltaY  = self.mbs.AddSensor(SensorSuperElement(bodyNumber=LiftBoomFFRF['oFFRFreducedOrder'], meshNodeNumber=TipNode, storeInternal=True, outputVariableType=exu.OutputVariableType.DisplacementLocal ))
         eps1    = self.mbs.AddSensor(SensorSuperElement(bodyNumber=LiftBoomFFRF['oFFRFreducedOrder'], meshNodeNumber=TipNode, storeInternal=True, outputVariableType=self.varType ))
-        eps1    = self.mbs.AddSensor(SensorSuperElement(bodyNumber=LiftBoomFFRF['oFFRFreducedOrder'], meshNodeNumber=StressNode, storeInternal=True, outputVariableType=self.varType))
+        eps2    = self.mbs.AddSensor(SensorSuperElement(bodyNumber=LiftBoomFFRF['oFFRFreducedOrder'], meshNodeNumber=StressNode, storeInternal=True, outputVariableType=self.varType))
 
         self.dictSensors['deltaY']   = deltaY
         self.dictSensors['eps1']     = eps1
-        self.dictSensors['sig1']     = self.mbs.AddSensor(SensorUserFunction(sensorNumbers=[eps1], storeInternal=True, sensorUserFunction=self.UFStressData))
+        self.dictSensors['sig1']     = self.mbs.AddSensor(SensorUserFunction(sensorNumbers=[eps2], storeInternal=True, sensorUserFunction=self.UFStressData))
            
         if oHA1 != None:
             sForce1          = self.mbs.AddSensor(SensorObject(objectNumber=oHA1, storeInternal=True, outputVariableType=exu.OutputVariableType.Force))
@@ -340,7 +356,7 @@ class ExudynFlexible():
         
         if self.StaticCase or self.StaticInitialization:
             self.mbs.variables['isStatics'] = True
-            self.simulationSettings.staticSolver.newton.relativeTolerance = 1e-5
+            self.simulationSettings.staticSolver.newton.relativeTolerance = 1e-7
             # self.simulationSettings.staticSolver.stabilizerODE2term = 2
             self.simulationSettings.staticSolver.verboseMode = self.verboseMode
             self.simulationSettings.staticSolver.numberOfLoadSteps = 10
@@ -546,17 +562,19 @@ class ExudynFlexible():
        TiltTip             = feT.GetNodeAtPoint(np.array([1.80499995,  0.347000003, 0.0390110984]))
    
        start_time          = time.time()
+       
        if self.loadFromSavedNPY:
-               feL.LoadFromFile('AbaqusMesh/feL',mode='PKL')
-               feT.LoadFromFile('AbaqusMesh/feT',mode='PKL')
+               feL.LoadFromFile(f"{self.filePath0}/feL_Modes{self.nModes}", mode='PKL')
+               feT.LoadFromFile(f"{self.filePath20}/feT_Modes{self.nModes}", mode='PKL')
        else:
          feL.ComputeHurtyCraigBamptonModes(boundaryNodesList=boundaryListL, nEigenModes=self.nModes, useSparseSolver=True,computationMode = HCBstaticModeSelection.RBE2) 
          feT.ComputeHurtyCraigBamptonModes(boundaryNodesList=boundaryListT, nEigenModes=self.nModes, useSparseSolver=True,computationMode = HCBstaticModeSelection.RBE2) 
          print("ComputePostProcessingModes ... (may take a while)")
-         feL.ComputePostProcessingModes(material=mat,outputVariableType=self.varType,)
-         feT.ComputePostProcessingModes(material=mat,outputVariableType=self.varType,)
-         feL.SaveToFile('AbaqusMesh/feL', mode='PKL')
-         feT.SaveToFile('AbaqusMesh/feT', mode='PKL')
+         feL.ComputePostProcessingModes(material=self.mat,outputVariableType=self.varType,)
+         feT.ComputePostProcessingModes(material=self.mat,outputVariableType=self.varType,)
+         
+         feL.SaveToFile(f"{self.filePath0}/feL_Modes{self.nModes}", mode='PKL')
+         feT.SaveToFile(f"{self.filePath20}/feT_Modes{self.nModes}", mode='PKL')
        if self.verboseMode:
            print("Hurty-Craig Bampton modes... ")
            print("eigen freq.=", feL.GetEigenFrequenciesHz())

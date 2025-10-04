@@ -17,8 +17,6 @@ class SLIDEModel():
         self.endTime            = endTime
         self.TimeStep           = self.endTime / (self.nStepsTotal)        
         self.nnType             = nnType        
-        self.angleMinDeg1       = 0
-        self.angleMaxDeg1       = 30
         self.n_td               = 0 
         self.n_etd              = 0
         self.p1Init             = 1e7
@@ -99,36 +97,40 @@ class SLIDEModel():
     
     def CreateInputVector(self, relCnt = 0, theta1=0, theta2=0, isTest=False,SLIDEwindow=False,
                                      Evaluate=False, Plotting= False):
-        
-        if not Evaluate:
-            angleInit1  =  np.random.rand()*(self.angleMaxDeg1-self.angleMinDeg1)+self.angleMinDeg1
-        else:
-            angleInit1  = theta1
-        
+       
         if self.Case == 'Patu':
-            vec         = np.zeros(17*self.nStepsTotal)
-            U1          = np.zeros(self.nStepsTotal)
-            U2          = np.zeros(self.nStepsTotal)
+            vec                     = np.zeros((17*self.nStepsTotal,))
+            U1                      = np.zeros(self.nStepsTotal)
+            U2                      = np.zeros(self.nStepsTotal)
+            self.angleMinDeg1       = 0
+            self.angleMaxDeg1       = 30
             if not Evaluate:
+                angleInit1  =  np.random.rand()*(self.angleMaxDeg1-self.angleMinDeg1)+self.angleMinDeg1
+                
                 if angleInit1 > 25:
-                    self.angleMinDeg2 =  -22.5
-                    self.angleMaxDeg2 = -20
-                    
+                   self.angleMinDeg2 =  -22.5
+                   self.angleMaxDeg2 = -20
+                else:
+                   self.angleMinDeg2 = 0
+                   self.angleMaxDeg2 = 10
+                 
+                angleInit2            = np.random.rand()*(self.angleMaxDeg2-self.angleMinDeg2)+self.angleMinDeg2
+                
                 U1      =  RandomSignal(self,SLIDEwindow, Evaluate)
                 U2      = -RandomSignal(self,SLIDEwindow, Evaluate)
             else:
-                self.angleMinDeg2 = 0
+                angleInit1  = theta1
+                angleInit2 = theta2
+
                 self.angleMaxDeg2 = 10
-                
                 # for i in range(self.nStepsTotal):
                 #     U1[i] =uref_1(self.timeVecOut[i])
                 #     U2[i] =uref_2(self.timeVecOut[i])
-                U1   =  RandomSignal(self,SLIDEwindow, Evaluate)
-                U2   =  RandomSignal(self,SLIDEwindow, Evaluate)
+                U1   =   RandomSignal(self,SLIDEwindow, Evaluate)
+                U2   =  -RandomSignal(self,SLIDEwindow, Evaluate)
             
       
-            angleInit2            = np.random.rand()*(self.angleMaxDeg2-self.angleMinDeg2)+self.angleMinDeg2
-            angleInit2 = theta2
+            
             
             vec[0:self.nStepsTotal]                     = self.timeVecOut
             vec[self.nStepsTotal:2*self.nStepsTotal]    = U1
@@ -139,14 +141,17 @@ class SLIDEModel():
                 PlottingFunc2( self.timeVecOut, U1, U2)
             
         else:
-            vec                                         = np.zeros(9*self.nStepsTotal)
-            U1                                          = np.zeros(self.nStepsTotal)
+            vec                     = np.zeros((9*self.nStepsTotal,))
+            U1                      = np.zeros(self.nStepsTotal)
+            self.angleMinDeg1       = -10
+            self.angleMaxDeg1       = 50
+            U1                      =  RandomSignal(self,SLIDEwindow, Evaluate)
+            
             if not Evaluate:
-                U1      =  RandomSignal(self,SLIDEwindow, Evaluate)
+                angleInit1  =  np.random.rand()*(self.angleMaxDeg1-self.angleMinDeg1)+self.angleMinDeg1
             else:
-                U1      =  RandomSignal(self,SLIDEwindow, Evaluate)
-                # for i in range(self.nStepsTotal):
-                #     U1[i] =uref(self.timeVecOut[i])
+                angleInit1  = theta1
+ 
            
             vec[0:self.nStepsTotal]                     = self.timeVecOut
             vec[self.nStepsTotal:2*self.nStepsTotal]    = U1

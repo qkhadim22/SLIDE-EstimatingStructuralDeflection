@@ -1,3 +1,17 @@
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# This is an EXUDYN example
+#
+# Details:  It includes data scaling, data arrangement as per SLIDE, network model
+#           and evaluation of trained networks.
+# Author:   Qasim Khadim, Peter Manzl, Johannes Gerstmayr
+# Date:     2025-06-23
+#
+# Copyright:This file is part of Exudyn. Exudyn is free software.
+# You can redistribute it and/or modify it under the terms of the Exudyn license. 
+# See 'LICENSE.txt' for more details.
+#
+#+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
 import sys
 import numpy as np
 # #from math import sin, cos, sqrt,pi
@@ -60,25 +74,23 @@ def SLIDE_Data(nStepsTotal, nSamples=None, td=None, input_data=None,target_data=
               Evaluate=None):
     
     # td : SLIDE window
-    k    = StepPredictor # step predictor
-    if not Evaluate:
-        slices = int((nStepsTotal - k) // td)
-    else:
-        slices = int(nStepsTotal- td)
     
     X = []
     Y = []
     
     if not Evaluate:
+        slices = int((nStepsTotal - StepPredictor) // td)
+
+        
         for i in range(nSamples):
             inputVec0  = []
             outputVec0 = []
         
             for j in range(slices):
-                startIndex0   = k * td
-                startIndex1   = (k + 1) * td-1
-                endIndex      = startIndex1 + k
-        
+                startIndex0   = j * td
+                startIndex1   = (j + 1) * td-1
+                endIndex      = startIndex1 + StepPredictor
+                  
                 inputLayers = np.hstack([input_data[key1][i][startIndex0:endIndex] for key1 in inputLayer])
                 if j == 0:
                     inputVec0 = inputLayers[np.newaxis, :]
@@ -92,19 +104,18 @@ def SLIDE_Data(nStepsTotal, nSamples=None, td=None, input_data=None,target_data=
                     else:
                         outputVec0 = np.vstack((outputVec0, outputLayers))
         
-            X.append(inputVec0)
-            if outputLayer is not None and len(outputLayer) > 0:
-                Y.append(outputVec0)
-        inputVec = np.vstack(X)
-        if outputLayer is not None and len(outputLayer) > 0:
-            outputVec = np.vstack(Y)
-        else:
-            outputVec = None
+            if i == 0:
+                X  = inputVec0.reshape(inputVec0.shape[0], 1, inputVec0.shape[1])
+                Y  = outputVec0
+            else: 
+                inputVec0       = inputVec0.reshape(inputVec0.shape[0], 1, inputVec0.shape[1])
+                X               = np.vstack((X, inputVec0))
+                Y               = np.vstack((Y, outputVec0))
     else:
         
       inputVec0  = []
       
-      for j in range(slices):
+      for j in range(0, nStepsTotal- td):
           startIndex0 = j
           startIndex1 = td+StepPredictor+j-1
   
@@ -114,10 +125,10 @@ def SLIDE_Data(nStepsTotal, nSamples=None, td=None, input_data=None,target_data=
           else:
               inputVec0 = np.vstack((inputVec0, inputLayers))
              
-      outputVec = []
-      inputVec  = inputVec0
+      Y = []
+      X  = inputVec0
     
-    return inputVec, outputVec
+    return [X, Y]
 
 #####################################################
 def NeuralNetworkStructureTypes():
@@ -274,7 +285,7 @@ moduleNntc = None #must be set in calling module
 #parameter function for training with exudyn ParameterVariation(...)
 def ParameterFunctionTraining(parameterSet):
     global moduleNntc
-    
+        
     #++++++++++++++++++++++++++++++++++++++++++++++
     #++++++++++++++++++++++++++++++++++++++++++++++
     #store default parameters in structure (all these parameters can be varied!)
@@ -303,7 +314,7 @@ def ParameterFunctionTraining(parameterSet):
     P.stepPredictor = 1
     P.LyaerUnits = 200
     P.system = 'system'
-    P.SLIDESteps= False
+    P.SLIDESteps= 29
     P.nStepsTotal = 200
     P.OutputLayer = ['deltaY']
     
@@ -311,8 +322,7 @@ def ParameterFunctionTraining(parameterSet):
     # #now update parameters with parameterSet (will work with any parameters in structure P)
     for key,value in parameterSet.items():
         setattr(P,key,value)
-
-        
+    
     #functionData are some values that are not parameter-varied but may be changed for different runs!
     if 'functionData' in parameterSet:
         for key,value in P.functionData.items():
@@ -323,29 +333,17 @@ def ParameterFunctionTraining(parameterSet):
 
     hiddenLayerStructure = NeuralNetworkStructureTypes()[int(P.hiddenLayerStructureType)] #'L'
     neuralNetworkTypeName = BasicNeuralNetworkNames()[P.neuralNetworkType]
-    
-    # if P.sensorType != -1: 
-    #     #inputVec = GetInputFromSensorType(P.system)[P.sensorType]
-    #     #outputVec = GetOutputFromSensorType(P.system)[P.outputVec]
-    #     # nPredictor  = GetStepPredictor()[P.nPredictor]
-    #     # nPredictor  = int(nPredictor[0])
-
-    # # if P.hiddenLayerSize != -1: 
-    # #     Units = [P.hiddenLayerSize]
-    
-    #print(f"inputVec: {inputVec}, steppPredictor: {P.stepPredictor} ")
-    
-    #print(neuralNetworkTypeName )
+  
     #++++++++++++++++++++++++++++++++++++++++++++++
     #++++++++++++++++++++++++++++++++++++++++++++++
-
     if P.dataFile == None:
         moduleNntc.CreateTrainingAndTestData(nTraining=P.nTraining, nTest=P.nTest,
                                        #parameterFunction=PVCreateData, #for multiprocessing
                                        )
     else:
         #print(P.hiddenLayerSize)system=P.system
-        moduleNntc.LoadTrainingAndTestsData(P.dataFile, nTraining=P.nTraining, nTest=P.nTest,nStepsTotal= P.nStepsTotal, 
+        moduleNntc.LoadTrainingAndTestsData(P.dataFile, nTraining=P.nTraining, nTest=P.nTest,
+                                            nStepsTotal= P.nStepsTotal, 
                                             InputLayer= P.InputLayer, OutputLayer=P.OutputLayer,
                                             StepPredictor=P.stepPredictor, #Units=P.LyaerUnits,
                                             SLIDESteps=P.SLIDESteps)
@@ -364,10 +362,6 @@ def ParameterFunctionTraining(parameterSet):
                     seed = P.case)
 
     rv = moduleNntc.EvaluateModel()
-    
-    #rv['lossEpoch'] = list(moduleNntc.lossLog()[:,0])
-    #rv['loss'] = list(moduleNntc.lossLog()[:,1])
-
     rv['testResultsEpoch'] = moduleNntc.TestResults()[0]
     rv['testResults'] = moduleNntc.TestResults()[1]
     rv['testResultsMin'] = moduleNntc.TestResults()[2]
@@ -384,10 +378,8 @@ def ParameterFunctionTraining(parameterSet):
     rv['trainResultsMae'] = moduleNntc.TrainResults()[5]
     
     if P.storeModelName!='':
-        moduleNntc.SaveNNModel(P.storeModelName+str(P.computationIndex)+'.pth')
-    
+        moduleNntc.SaveNNModel(P.storeModelName+str(P.computationIndex))
     return rv #dictionary
-
 
 
 class RMSELoss(nn.Module):
@@ -437,10 +429,8 @@ class network_training_center():
         
         Xtrain,Ytrain,Xtest,Ytest      = {},{},{},{}
         XtrainS,YtrainS,XtestS,YtestS  = {},{},{},{}
-        nTraining                      = self.nTraining
-        nTest                          = self.nTest
+
         #1. Loading the data
-        
         if not Evaluate:
             fileExtension = ''
             if len(fileName) < 4 or fileName[-4:]!='.npy':
@@ -449,6 +439,10 @@ class network_training_center():
                 dataDict = np.load(f, allow_pickle=True).item() 
         else:
             dataDict = Data
+        
+        if not Evaluate:
+            nTraining  = dataDict['nTraining']
+            nTest      =  dataDict['nTest']
             
         #2. Finding  Xtrain,Ytrain,Xtest,Ytest from the data.
         for key in InputLayer:    
@@ -456,7 +450,7 @@ class network_training_center():
                Xtrain[key]     = np.stack([dataDict['inputsTraining'][i][key] for i in range(nTraining)])
                Xtest[key]      = np.stack([dataDict['inputsTest'][i][key] for i in range(nTest)])
             else:
-               Xtrain[key]     = np.stack([dataDict[i][key] for i in range(min(nTraining, len(dataDict)))])
+               Xtrain[key]     = np.stack([dataDict[0][key]])
                Xtest[key]      = []
         
         for key in OutputLayer:
@@ -464,17 +458,17 @@ class network_training_center():
                 Ytrain[key]     = np.stack([dataDict['targetsTraining'][i][key] for i in range(nTraining)]) 
                 Ytest[key]     = np.stack([dataDict['targetsTest'][i][key] for i in range(nTest)])
             else:
-                Ytrain[key]     = np.stack([dataDict[i+1][key] for i in range(min(nTraining, len(dataDict)))]) 
+                Ytrain[key]     = np.stack([dataDict[1][key]]) 
                 Ytest[key]      = []
     
         #3. Calculating  scaling factors
         if not Evaluate:
             InputScalingFactors  = {}
             for key in InputLayer:
-                if key in ['s1', 's2', 'p1', 'p2', 'p3', 'p4']:
-                    InputScalingFactors[key] = {"min": Xtrain[key].min(), "max": Xtrain[key].max()}
-                else:
-                    InputScalingFactors[key] = {"min": Xtrain[key].min(), "max": Xtrain[key].max()} 
+                min_val = Xtrain[key].min()
+                max_val = Xtrain[key].max()
+                InputScalingFactors[key] = {"min": min_val - 0.02 * abs(min_val),"max": max_val + 0.02 * abs(max_val)}
+      
             np.save(fileName + 'InputScalingFactors.npy', InputScalingFactors)
         else:
             InputScalingFactors = np.load(file + 'InputScalingFactors.npy', allow_pickle=True).item()
@@ -482,7 +476,10 @@ class network_training_center():
         if not Evaluate:
             OutputScalingFactors = {}
             for key in OutputLayer:
-                OutputScalingFactors[key] = {"min": Ytrain[key].min(), "max": Ytrain[key].max()}
+                min_val = Ytrain[key].min()
+                max_val = Ytrain[key].max()
+                OutputScalingFactors[key] = {"min": min_val - 0.02 * abs(min_val),"max": max_val + 0.02 * abs(max_val)}
+           
             np.save(fileName + 'OutputScalingFactors.npy', OutputScalingFactors)
         else:
             OutputScalingFactors = np.load(file + 'OutputScalingFactors.npy', allow_pickle=True).item()
@@ -494,8 +491,13 @@ class network_training_center():
                 XtrainS[key] = ScaleZeroToOne(Xtrain[key], InputScalingFactors[key]['min'], InputScalingFactors[key]['max'])
                 XtestS[key]  = ScaleZeroToOne(Xtest[key], InputScalingFactors[key]['min'], InputScalingFactors[key]['max'])
             else:
-                XtrainS[key] = ScaleMinusOneToOne(Xtrain[key], InputScalingFactors[key]['min'], InputScalingFactors[key]['max'])
-                XtestS[key]  = ScaleMinusOneToOne(Xtest[key], InputScalingFactors[key]['min'], InputScalingFactors[key]['max'])
+                if key in ['U1', 'U2']:
+                    XtrainS[key] = Xtrain[key]
+                    XtestS[key]  = Xtest[key]
+                else:
+                    XtrainS[key] = ScaleMinusOneToOne(Xtrain[key], InputScalingFactors[key]['min'], InputScalingFactors[key]['max'])
+                    XtestS[key] = ScaleMinusOneToOne(Xtest[key], InputScalingFactors[key]['min'], InputScalingFactors[key]['max'])
+
         for key in OutputLayer:
               YtrainS[key]         = ScaleMinusOneToOne(Ytrain[key],OutputScalingFactors[key]['min'],OutputScalingFactors[key]['max'] ) 
               YtestS[key]          = ScaleMinusOneToOne(Ytest[key],OutputScalingFactors[key]['min'],OutputScalingFactors[key]['max'] )  
@@ -570,12 +572,7 @@ class network_training_center():
                                                                                           Evaluate=Evaluate, file=file)
         
         # Steps from damped oscillations
-        if SLIDESteps:
-                self.SLIDESteps = SLIDESteps
-        else: 
-                # self.SLIDESteps     =int(np.mean(dataDict['SLIDESteps'][0][0])) # Statistics-based
-                self.SLIDESteps     = int(np.mean(dataDict['SLIDESteps'][0][1])) # EOM-based
-
+        self.SLIDESteps = SLIDESteps
         print(f'Data arrangement using SLIDE window={self.SLIDESteps}')
           #Data points devision division based SLIDESteps
           
@@ -585,8 +582,9 @@ class network_training_center():
         if not Evaluate:
             self.inputsTest, self.targetsTest     = SLIDE_Data(self.nStepsTotal, self.nTest, self.SLIDESteps, 
                                                                  XtestS, YtestS,StepPredictor,InputLayer,OutputLayer)
-            self.hiddenInitTraining               = np.zeros((self.inputsTraining.shape[0], self.inputsTraining.shape[1]))
-            self.hiddenInitTest                    = np.zeros((self.targetsTest.shape[0], self.targetsTest.shape[1]))
+            
+            self.hiddenInitTraining = np.zeros((self.inputsTraining.shape[0], 1))
+            self.hiddenInitTest     = np.zeros((self.targetsTest.shape[0], 1))
             
         else:
             self.inputsTest, self.targetsTest    =  [],[]
@@ -660,15 +658,11 @@ class network_training_center():
         
         
         #%%++++++++++++++++++++++++++++++++++++++++
-        [inputSize, outputSize] = self.nnModel.GetInputOutputSizeNN()
+        #[inputSize, outputSize] = self.nnModel.GetInputOutputSizeNN()
         
-        inputSize =self.inputsTraining.shape[1]
+        inputSize =self.inputsTraining.shape[2]
         outputSize=self.targetsTraining.shape[1]
         
-        #print('size=',[inputSize, outputSize])
-        # inputSize = self.nnModel.GetInputScaling().shape[self.nnModel.GetInputScaling().ndim-1]  #OLD: len(...)
-        # outputSize = self.nnModel.GetOutputScaling().shape#[self.nnModel.GetOutputScaling().ndim-1]
-
         self.rnn = MyNeuralNetwork(inputSize = inputSize, 
                                    outputSize = outputSize, 
                                    neuralNetworkTypeName = self.neuralNetworkTypeName,
@@ -687,34 +681,17 @@ class network_training_center():
         #adjust for FFN
         self.AdjustInputsToNN(neuralNetworkTypeName)
         
-        # Convert your data to PyTorch tensors and create a DataLoader
-        inputs = torch.tensor(self.inputsTraining, dtype=self.floatType, requires_grad=True).to(self.computeDevice)#,non_blocking=True)
-        #inputs = inputs[:, :-5]
-        
+        #Training data 
+        inputs = torch.tensor(self.inputsTraining, dtype=self.floatType, requires_grad=True).to(self.computeDevice)#,non_blocking=True)        
         targets = torch.tensor(self.targetsTraining, dtype=self.floatType, requires_grad=True).to(self.computeDevice)#,non_blocking=True)
-        #targets = targets[:, -1:]
-        #self.hiddenInitTraining=torch.zeros((inputs.shape[0], 0))
-        
-        #hiddenInit=torch.zeros((inputs.shape[0], 1), requires_grad=True)
-        
         hiddenInit = torch.tensor(self.hiddenInitTraining, dtype=self.floatType, requires_grad=True).to(self.computeDevice)#,non_blocking=True)
         
-        
+        #Validation data 
         inputsTest = torch.tensor(self.inputsTest, dtype=self.floatType).to(self.computeDevice)
-        #inputsTest = inputsTest[:, :-5]
         targetsTest = torch.tensor(self.targetsTest, dtype=self.floatType).to(self.computeDevice)
-        #targetsTest = targetsTest[:, -1:]
         hiddenInitTest = torch.tensor(self.hiddenInitTest, dtype=self.floatType,requires_grad=True).to(self.computeDevice)
         
-        # hiddenInitTest=torch.zeros((inputsTest.shape[0], 0))
-
-        # print('torch NNTC device=',self.computeDevice)
-
-        # print('inputSize = ', inputSize)
-        # print('inputs[-1] = ', inputs.size(-1))
-        # print('outputSize = ', outputSize)
-        # print('targets[-1] = ', targets.size(-1))
-
+        # Convert your data to PyTorch tensors and create a DataLoader
         dataset = TensorDataset(inputs.requires_grad_(), targets.requires_grad_(), hiddenInit.requires_grad_())
         dataloader = DataLoader(dataset, batch_size=batchSize, 
                                 shuffle=self.dataLoaderShuffle)
@@ -727,13 +704,11 @@ class network_training_center():
 
         
         # Define a loss function and an optimizer
-        
-        optimizer = torch.optim.Adam(self.rnn.parameters(), lr=self.learningRate,weight_decay=5e-6)        
+        optimizer = torch.optim.Adam(self.rnn.parameters(), lr=self.learningRate)        
         self.lossLog = []
         self.trainResults = [[], [], [], [], [],[]] #epoch, tests, min, mean, max, mae
         self.testResults = [[], [], [], [], [],[]] #epoch, tests, min, mean, max, mae
-
-        accumulation_steps= 1
+                
         if reloadTrainedModel!='': #this may cause problems with cuda!
             #self.rnn.rnn.load_state_dict(torch.load(reloadTrainedModelDict)) #this does not work
             self.LoadNNModel(reloadTrainedModel)
@@ -749,10 +724,11 @@ class network_training_center():
             self.rnn.train()
             for i, (inputs, targets, initial_hidden_states) in enumerate(dataloader):
                 # Forward pass
+                optimizer.zero_grad()
+                
                 outputs = self.rnn(inputs)
-                # if not self.nnModel.IsFFN():
-                #     outputs = outputs.view(-1, *outputSize)  # Reshape the outputs to match the target shape
                 loss = self.lossFunction(outputs, targets)
+                                
                 maeTrain = torch.mean(torch.abs(outputs - targets)).item()
                 maeTrain  = float(maeTrain)
         
@@ -792,27 +768,9 @@ class network_training_center():
                         # Forward pass
                         self.rnn.SetInitialHiddenStates(initial_hidden_states)
                         outputs = self.rnn(inputs)
-                        # outputs = outputs.view(-1, *outputSize)  # Reshape the outputs to match the target shape
                         mse =  self.lossFunction(outputs, targets)
                         maeTest = torch.mean(torch.abs(outputs - targets))
-                        
-                        #print(outputs.view(-1, *outputSize))
-
-                        # for i in range(self.nTest):
-    
-                        #     inputVec = self.inputsTest[i:i+1]
-                            
-                        #     x = torch.tensor(inputVec, dtype=self.floatType).to(self.computeDevice)
-                        #     y = np.array(self.rnn(x).to(self.computeDevice).tolist()[0]) #convert output to list
-                        #     yRef = self.targetsTest[i:i+1][0]
-                            
-                        #     print('x.size=',x.size())
-                        #     print('y.size=',y.shape)
-                        #     print('yRef.size=',yRef.shape)
-    
-                        #     #this operation fully runs on CPU:
-                        #     mse = self.lossFunction(torch.tensor(y, dtype=self.floatType), 
-                        #                             torch.tensor(yRef, dtype=self.floatType))
+                       
                         
                         testresults += [float(mse.detach())] #np.linalg.norm(y-yRef)**2/len(y)]
                         maeTest     = float(maeTest.detach())
@@ -877,7 +835,9 @@ class network_training_center():
 
     #load trained model, including the structure (hidden layers, etc.)
     def LoadNNModel(self, fileName):
-        self.rnn = self.rnn.load_state_dict(torch.load(fileName))
+        self.rnn = torch.load(fileName, map_location=self.computeDevice,weights_only=False)
+        self.rnn.eval()
+        return self.rnn 
 
     #plot loss and tests over epochs, using stored data from .npy file
     #dataFileTT is the training and test data file name
@@ -1215,12 +1175,6 @@ class network_training_center():
            print('Avg. CPU time for 1 evaluation:', SmartRound2String(timeElapsed/nMeasurements))
 
        return {'testMSE':testMSE, 'maxTrainingMSE':max(trainingMSE)}
-    
-    def EstimationModel(self,model=None, angleInit1= None, angleInit2=None, nStepsTotal =200, InputLayer=[], OutputLayer=[],StepPredictor=1,
-                      SLIDESteps=1,file=None,storeModelName = None):
-        
-
-        return 
 
 
 
@@ -1229,8 +1183,9 @@ class network_training_center():
         
         a4_width_inches, a4_height_inches = 11.7, 8.3 / 2  # Horizontal layout
         timeVecOut          = data[0]['t']
-        fontSize1           = 16
-        fontSize2           = 16
+        fontSize1           = 12
+        fontSize2           = 12
+        tEnd                = timeVecOut[-1]
             
         InputScalingFactors = np.load(file + 'InputScalingFactors.npy', allow_pickle=True).item()
         OutputScalingFactors = np.load(file + 'OutputScalingFactors.npy', allow_pickle=True).item()
@@ -1246,14 +1201,6 @@ class network_training_center():
                                                  OutputScalingFactors[key]['min'],
                                                  OutputScalingFactors[key]['max'])
             
-            # Initialize plot figure (constrained_layout=False)
-            # fig = plt.figure(figsize=(a4_width_inches, a4_height_inches), constrained_layout=False)
-            # gs = gridspec.GridSpec(2, 2, figure=fig, width_ratios=[2,1], height_ratios=[1,1], wspace=0.2, hspace=0.3)
-            
-            # ax_main = fig.add_subplot(gs[:,0])
-            # ax_error = fig.add_subplot(gs[0,1])
-            # ax_zoom = fig.add_subplot(gs[1,1])
-            
             fig, ax_main = plt.subplots(figsize=(8,6)) 
             
             # Set labels based on output type
@@ -1263,119 +1210,84 @@ class network_training_center():
                 ylabel_main = r'$\delta_\mathrm{y}$, mm'
                 ylabel_error = 'Error, mm'
                 ylabel_zoom = r'$\delta_\mathrm{y},\ \mathrm{mm}$'
+                
+                y_min  = OutputScalingFactors[key]['min']*1000
+                y_max  = OutputScalingFactors[key]['max']*1000
+                
             elif key == 'sig1':
                 data1 = data[1][key]/1e6  # MPa
                 Y[key] = Y_Scale[key]/1e6
                 ylabel_main = r'$\sigma_{\mathrm{xx}}$, MPa'
                 ylabel_error = 'Error, MPa'
                 ylabel_zoom = r'$\sigma_{\mathrm{xx}}$, MPa'
+                
+                y_min  = OutputScalingFactors[key]['min']/1e6
+                y_max  = OutputScalingFactors[key]['max']/1e6
+                
             elif key == 'sig2':
                 data1 = data[1][key]/1e6
                 Y[key] = Y_Scale[key]/1e6
                 ylabel_main = r'$\sigma_{\mathrm{xx}}$, MPa'
                 ylabel_error = 'Error, MPa'
                 ylabel_zoom = r'$\sigma_{\mathrm{xx}}$, MPa'
+                y_min  = OutputScalingFactors[key]['min']/1e6
+                y_max  = OutputScalingFactors[key]['max']/1e6
+                
             elif key == 'eps1':
                 data1 = data[1][key]*1e6  # micro-strain
                 Y[key] = Y_Scale[key]*1e6
                 ylabel_main = r'$\epsilon_{\mathrm{xy}}, \mu$'
                 ylabel_error = r'Error, \mu'
                 ylabel_zoom = r'$\epsilon_\mathrm{xy}, \mu$'
+                
+                y_min  = OutputScalingFactors[key]['min']*1e6
+                y_max  = OutputScalingFactors[key]['max']*1e6
+                
             elif key == 'eps2':
                 data1 = data[1][key]*1e6
                 Y[key] = Y_Scale[key]*1e6
                 ylabel_main = r'$\epsilon_{\mathrm{xy}}, \mu$'
                 ylabel_error = r'Error, \mu'
                 ylabel_zoom = r'$\epsilon_\mathrm{xy}, \mu$'
-                    
+                y_min  = OutputScalingFactors[key]['min']*1e6
+                y_max  = OutputScalingFactors[key]['max']*1e6
+                
             else:
                 data1 = data[1][key]
                 Y[key] = Y_Scale[key][0]
                 ylabel_main =  fr'${key}$'
                 ylabel_error = r'Error, \mu'
                 ylabel_zoom = r'$\epsilon_\mathrm{xy}, \mu$'
+                y_min  = OutputScalingFactors[key]['min']
+                y_max  = OutputScalingFactors[key]['max']
                 
                 # print(f'Output "{key}" not added yet!')
                 # continue
             
+            mape = mean_absolute_percentage_error(data1[SLIDESteps+Steps:ns], Y[key].flatten()[SLIDESteps+Steps:ns])
             ax_main.plot(timeVecOut, data1, color='red', linestyle='-', label='Reference solution')
             ax_main.plot(timeVecOut, Y[key].flatten(), color='blue', linestyle=':', label='SLIDE estimations')
-            ax_main.set_xlim(0, 10)  # keep full data range
-            ax_main.set_xticks([0, 5, 10])  # show only 0, 10, 20 on x-axis
-            ax_main.set_xticklabels([r'$0$', r'$5$', r'$10$'])
+            ax_main.set_xlim(0, tEnd)  # keep full data range
+            #ax_main.set_ylim(y_min, y_max)  # keep full data range
+            ax_main.set_xticks([0, tEnd/2, tEnd])  # show only 0, 10, 20 on x-axis
+            y_ticks = np.linspace(y_min, y_max, 5)
+            #ax_main.set_yticks(y_ticks)
+            ax_main.set_xticklabels([f"{0:.0f}", f"{tEnd/2:.0f}", f"{tEnd:.0f}"])     
+            #ax_main.set_yticklabels([f"{val:.0f}" for val in y_ticks]) 
             ax_main.set_xlabel('Time, s', fontdict={'family': 'Times New Roman', 'size': fontSize1})
             ax_main.set_ylabel(ylabel_main, fontdict={'family': 'Times New Roman', 'size': fontSize1})
             ax_main.grid(color='lightgray', linestyle='--', linewidth=0.5)
             ax_main.tick_params(axis='both', labelsize=fontSize2)
             ax_main.set_facecolor('#f0f8ff')
             ax_main.legend(fontsize=fontSize2)
-            # ax_main.annotate(f'MAPE: {mape:.2f}%', xy=(7.5, y_min_main), fontsize=12, backgroundcolor='lightgrey')
+            # ax_main.annotate(f'MAPE: {mape:.2f}%', xy=(0.7, y_ticks[2]+0.8*y_ticks[2]), fontsize=10, backgroundcolor='lightgrey')
+            ax_main.text(0.8, 0.1, f'MAPE: {mape:.2f}%',transform=ax_main.transAxes,fontdict={'family': 'Times New Roman', 'size': fontSize1},backgroundcolor='lightgrey')
             ax_main.axvline(x=timeVecOut[SLIDESteps - 1], color='gray', linestyle='--', linewidth=1)
-            # ax_main.text(timeVecOut[SLIDESteps - 1]+0.08, y_min_main, r'$t_d$', fontdict={'family': 'Times New Roman', 'size': fontSize1})
-        
-            # Compute errors
-            # error_vals = np.abs(data1[SLIDESteps:ns] - Y[key].flatten()[SLIDESteps:ns])
-            # mae = mean_absolute_error(data1[SLIDESteps:ns], Y[key].flatten()[SLIDESteps:ns])
-            # mape = mean_absolute_percentage_error(data1[SLIDESteps+Steps:ns], Y[key].flatten()[SLIDESteps+Steps:ns])
-        
-            # # Determine y-axis limits
-            # buffer_factor = 0.1  # 10% margin
-            # y_min_main = np.min([np.min(data1), np.min(Y[key].flatten())])
-            # y_max_main = np.max([np.max(data1), np.max(Y[key].flatten())])
-            # y_range_main = y_max_main - y_min_main
-            # ax_main.set_ylim(y_min_main - buffer_factor*y_range_main, y_max_main + buffer_factor*y_range_main)
-        
-            # ax_error.set_ylim(0, np.max(error_vals)*1.1)
-        
-            # zoom_mask = (timeVecOut >= 2) & (timeVecOut <= 4)
-            # y_min_zoom = np.min([np.min(Y[key].flatten()[zoom_mask]), np.min(data1[zoom_mask])])
-            # y_max_zoom = np.max([np.max(Y[key].flatten()[zoom_mask]), np.max(data1[zoom_mask])])
-            # y_range_zoom = y_max_zoom - y_min_zoom
-            # ax_zoom.set_ylim(y_min_zoom - 0.1*y_range_zoom, y_max_zoom + 0.1*y_range_zoom)
-        
-            # # Main plot
-            # ax_main.plot(timeVecOut, data1, color='red', linestyle='-', label='Reference solution')
-            # ax_main.plot(timeVecOut, Y[key].flatten(), color='blue', linestyle=':', label='SLIDE estimations')
-            # ax_main.set_xlim(0, 10)  # keep full data range
-            # ax_main.set_xticks([0, 5, 10])  # show only 0, 10, 20 on x-axis
-            # ax_main.set_xticklabels([r'$0$', r'$5$', r'$10$'])
-            # ax_main.set_xlabel('Time, s', fontdict={'family': 'Times New Roman', 'size': fontSize1})
-            # ax_main.set_ylabel(ylabel_main, fontdict={'family': 'Times New Roman', 'size': fontSize1})
-            # ax_main.grid(color='lightgray', linestyle='--', linewidth=0.5)
-            # ax_main.tick_params(axis='both', labelsize=fontSize2)
-            # ax_main.set_facecolor('#f0f8ff')
-            # ax_main.legend(fontsize=fontSize2)
-            # ax_main.annotate(f'MAPE: {mape:.2f}%', xy=(7.5, y_min_main), fontsize=12, backgroundcolor='lightgrey')
-            # ax_main.axvline(x=timeVecOut[SLIDESteps - 1], color='gray', linestyle='--', linewidth=1)
-            # ax_main.text(timeVecOut[SLIDESteps - 1]+0.08, y_min_main, r'$t_d$', fontdict={'family': 'Times New Roman', 'size': fontSize1})
-        
-            # # Error subplot
-            # ax_error.plot(timeVecOut[SLIDESteps:ns], error_vals, color='green')
-            # ax_error.set_xlabel('Time, s', fontdict={'family': 'Times New Roman', 'size': fontSize1}, labelpad=5)
-            # ax_error.set_ylabel(ylabel_error, fontdict={'family': 'Times New Roman', 'size': fontSize1}, labelpad=5)
-            # ax_error.set_xlim(0, 10)  # keep full data range
-            # ax_error.set_xticks([0, 5, 10])  # show only 0, 10, 20 on x-axis
-            # ax_error.set_xticklabels([r'$0$', r'$5$', r'$10$'])
-            # ax_error.tick_params(axis='both', labelsize=fontSize2)
-            # ax_error.grid(True)
-            # ax_error.set_facecolor('#e6ffe6')
-        
-            # # Zoom subplot
-            # ax_zoom.plot(timeVecOut, data1, color='red', linestyle='-')
-            # ax_zoom.plot(timeVecOut, Y[key].flatten(), color='blue', linestyle=':')
-            # ax_zoom.set_xlim(2, 4)
-            # ax_zoom.set_xticklabels([r'$2$',r'$4$'])
-            # ax_zoom.set_xlabel('Time, s', fontdict={'family': 'Times New Roman', 'size': fontSize1}, labelpad=5)
-            # ax_zoom.set_ylabel(ylabel_zoom, fontdict={'family': 'Times New Roman', 'size': fontSize1}, labelpad=5)
-            # ax_zoom.tick_params(axis='both', labelsize=fontSize2)
-            # ax_zoom.grid(True)
-            # ax_zoom.set_facecolor('#fffacd')
-        
-            # # Adjust layout manually
-            # plt.subplots_adjust(left=0.1, right=0.98, top=0.95, bottom=0.125)
-            # plt.tight_layout()
-            # plt.savefig(f"{string}_estimate{key}.pdf", format='pdf', bbox_inches='tight')
-            # plt.show()
+            # ax_main.text(timeVecOut[SLIDESteps - 1]+0.08, y_ticks[2]-0.8*y_ticks[2], r'$t_d$', fontdict={'family': 'Times New Roman', 'size': fontSize1})
+            ax_main.text(0.03, 0.6, r'$t_d$',transform=ax_main.transAxes,fontdict={'family': 'Times New Roman', 'size': fontSize1},va='top', ha='center')
+            fig.savefig(f"{string}_estimate{key}.pdf", format='pdf', bbox_inches='tight')
+            fig.show()
+
 
        
         return         

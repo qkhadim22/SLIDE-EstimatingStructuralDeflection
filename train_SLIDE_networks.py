@@ -1,32 +1,33 @@
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # This is an EXUDYN example
 #
-# Details:  Test model for 3D FFRF reduced order model with 2 flexible bodies
-#
-# Author:   Johannes Gerstmayr
+# Details:  Select input and ouput configurations in lift boom and Patu crane.
+#            Train SLIDE networks, correspondigly.
+# This is an Exudyn example.
+# Author:   Qasim Khadim, Peter Manzl, Johannes Gerstmayr
 # Date:     2023-06-23
 #
-# Copyright:This file is part of Exudyn. Exudyn is free software. You can redistribute it and/or modify it under the terms of the Exudyn license. See 'LICENSE.txt' for more details.
+# Copyright:This file is part of Exudyn. Exudyn is free software.
+# You can redistribute it and/or modify it under the terms of the Exudyn license. 
+# See 'LICENSE.txt' for more details.
 #
 #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-from models.data_source import SLIDEModel
 from generate_training_data import *
 from SLIDE.networksLib import  *
 import SLIDE.networksLib
 
-
 #Training phase
 nnType='FFN'
 data           = np.load(dataFile + ".npy", allow_pickle=True).item()
-# SLIDESteps     =int(np.mean(data['SLIDESteps'][0][0])) # Statistics-based
-SLIDESteps     = int(np.mean(data['SLIDESteps'][0][1])) # EOM-based
+SLIDESteps     =int(np.mean(data['SLIDESteps'][0][0])) # Statistics-based
+#SLIDESteps     = int(np.mean(data['SLIDESteps'][0][1])) # EOM-based
 
 if not Case == 'Patu':
     #These input-output sensor configurations are in MSSP paper for 1-DOF system.
     #inputConfig     = ['U1','s1', 'ds1', 'p1', 'p2']
     #outConfig       = ['deltaY','eps1', 'sig1']
     
-    inputConfig      = ['U1','s1', 'ds1', 'p1', 'p2'] # Minimum sensor configuration
+    inputConfig      = ['U1','s1', 'p1', 'p2'] # Minimum sensor configuration
     outConfig        = ['deltaY','eps1', 'sig1']
     Steps            = 1 # 1 (single step)/more (multisteps)    
 else: 
@@ -34,37 +35,35 @@ else:
     #inputConfig     = ['U1', 'U2','s1', 's2', 'ds1', 'ds2', 'p1', 'p2', 'p3', 'p4']
     #outConfig       = ['deltaY','eps1', 'sig1', 'eps2', 'sig2']
     
-    inputConfig      = ['U1', 'U2','s1', 's2', 'ds1', 'ds2', 'p1', 'p2', 'p3', 'p4']
-    outConfig        = ['deltaY','eps1', 'sig1', 'eps2', 'sig2']
+    inputConfig      = ['U1', 'U2','s1', 's2', 'p1', 'p2', 'p3', 'p4']
+    outConfig        = ['deltaY', 'sig1', 'eps2']
     Steps            = 1 # 1 (single step)/more (multisteps)
     
-nntc                            = network_training_center(computeDevice='cuda' if useCUDA else 'cpu', verboseMode=0)
-SLIDE.networksLib.moduleNntc    = nntc #this informs the module about the NNTC (multiprocessing)
 inputStr       = ",".join(inputConfig)
 outputStr      = ",".join(outConfig)
 storeModelName = f"solution/model/{Case}/{model.GetModelNameShort()}_{nnType}{nTraining}_{nTest}_{Material}_{endTime}t{nStepsTotal}{LiftLoad}_{inputStr}_{outputStr}" 
 resultsFile    = storeModelName
-
+nntc           = network_training_center(computeDevice='cuda' if useCUDA else 'cpu', verboseMode=0)
+SLIDE.networksLib.moduleNntc    = nntc #this informs the module about the NNTC (multiprocessing)
 
 def main():    
     if not parameterVariation:
+
         # Load and scale data
         nntc.LoadTrainingAndTestsData(dataFile,nTraining=nTraining, nTest=nTest, nStepsTotal=nStepsTotal, #system=Case,
-                                      InputLayer=inputConfig, OutputLayer=outConfig,StepPredictor=Steps)
+                                      InputLayer=inputConfig, OutputLayer=outConfig,StepPredictor=Steps, SLIDESteps=SLIDESteps)
         
         # Train Network
         nntc.verboseMode=1
         hiddenLayerStructure=''
         nntc.TrainModel(neuralNetworkTypeName=nnType, maxEpochs=1000, learningRate= 1e-3, 
-                        lossThreshold=1e-6, #5E-6 was used in MSSP paper 
-                        batchSize=int(nTraining/8),hiddenLayerSize=SLIDESteps*len(inputConfig), hiddenLayerStructure=hiddenLayerStructure,
+                        lossThreshold=5e-6, #5E-6 was used in MSSP paper 
+                        batchSize=int(nTraining/8),hiddenLayerSize=SLIDESteps, hiddenLayerStructure=hiddenLayerStructure,
                         #hiddenLayerSize=200, hiddenLayerStructure='LLSLSL', #slower, more accurate
                         lossLogInterval=1, epochPrintInterval=50, testEvaluationInterval=1,
                         dataLoaderShuffle=True  )
         
-        nntc.SaveNNModel(storeModelName)
-        
-        
+        nntc.SaveNNModel(storeModelName)        
         nntc.PlotTrainingResults()
 
 
@@ -73,7 +72,7 @@ def main():
         if nnType == 'FFN':
             functionData = {'maxEpochs':1000, #for linear 1mass, 5mass, friction: 2500 is alredy very good
                             'nTest':nTest,
-                            'lossThreshold':1e-10,
+                            'lossThreshold':5e-6,
                             'lossLogInterval':20,
                             'testEvaluationInterval':1,
                             'nTraining':nTraining,
@@ -85,11 +84,13 @@ def main():
                             'modelName':model.GetModelName(),
                             'dataFile':dataFile,
                             'InputLayer': inputConfig, 
-                             'OutputLayer':outConfig
+                             'OutputLayer':outConfig,
+                             'SLIDESteps':SLIDESteps,
+                             'nStepsTotal':nStepsTotal
                             # 'system': Patu
                             } #additional parameters
             parameters = {
-                          'learningRate':[1e-4], # best one[ 0, 11, 12, 17, 25]. 14 (4 sensors) and 1022 (all sensors)[0, 11, 12, 17, 25]
+                          'learningRate':[1e-3], # best one[ 0, 11, 12, 17, 25]. 14 (4 sensors) and 1022 (all sensors)[0, 11, 12, 17, 25]
                           'hiddenLayerStructureType':[ 1, 19,26,8,17], #1, 19,26,8,17
                           'hiddenLayerSize':[SLIDESteps], #larger is better; 4: does not work at all; 'RL' with 8 works a bit
                           'case':[1], #randomizer
@@ -164,3 +165,5 @@ if __name__ == "__main__":
     
     
     main()
+    
+    sys.exit()
