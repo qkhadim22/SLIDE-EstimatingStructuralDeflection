@@ -29,10 +29,10 @@ This project uses SLIDE networks for estimating structural dynamics in hydraulic
 
 
 ## References
-- Use the references below for citing SLIDE original paper (1), its application in hydraulically flexible systems (2) and the hydraulic parameters (3). 
-	1. Manzl, P., Humer, A., Khadim, Q. and Gerstmayr, J., 2025. SLIDE: A machine-learning based method for forced dynamic response estimation of multibody systems. Mechanics Based Design of Structures and Machines, pp.1-29.
-	2. Khadim, Q., Manzl, P., Kurvinen, E., Mikkola, A., Orzechowski, G. and Gerstmayr, J., 2025. Real-time structural dynamics estimation in hydraulically actuated systems using 3D flexible multibody simulation and SLIDE networks. Mechanical Systems and Signal Processing, 240, p.113220.
- 	3. Qasim Khadim, et al. Experimental investigation into the state estimation of a forestry crane using the unscented Kalman filter and a multiphysics model. Mechanism and Machine Theory, 189, 105405, 2023.
+Use the references below for citing SLIDE original paper (1), its application in hydraulically flexible systems (2) and the hydraulic parameters (3). 
+- Manzl, P., Humer, A., Khadim, Q. and Gerstmayr, J., 2025. SLIDE: A machine-learning based method for forced dynamic response estimation of multibody systems. Mechanics Based Design of Structures and Machines, pp.1-29.
+- Khadim, Q., Manzl, P., Kurvinen, E., Mikkola, A., Orzechowski, G. and Gerstmayr, J., 2025. Real-time structural dynamics estimation in hydraulically actuated systems using 3D flexible multibody simulation and SLIDE networks. Mechanical Systems and Signal Processing, 240, p.113220.
+- Qasim Khadim, et al. Experimental investigation into the state estimation of a forestry crane using the unscented Kalman filter and a multiphysics model. Mechanism and Machine Theory, 189, 105405, 2023.
 
 
 ## Installation
