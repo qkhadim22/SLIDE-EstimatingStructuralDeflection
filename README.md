@@ -6,16 +6,18 @@ This project uses SLIDE networks for estimating structural dynamics in hydraulic
 - Comparison against state-of-the-art models, including RNNs, LSTMs, and CNNs
 
 ## How to use it?
-**Generate training data:** ()
+**Generate training data:** (*generate_training_data.py*)
 - Setup – Choose an appropriate number of training and validation (test) simulations
 - Models – 3D flexible (CMS-based) multibody systems, mode selection, hydraulics, materials (Steel, Aluminium, Titanium, and Composites), an algorithm to compute initial pressures from random initial configurations, 1-DOF (open-loop) and 2-DOF (closed-loop) multibody system configurations
 - Exudyn – Data acquisition and preprocessing tools ([Exudyn Documentation](https://exudyn.readthedocs.io/en/v1.9.83.dev1/))
 
-**Train SLIDE models:**
+**Train SLIDE models:** (*train_SLIDE_networks.py*)
 - Input – Valve control signals ($U_1, U_2$), actuator positions ($s_1, s_2$), actuator velocities ($\dot{s}_1, \dot{s}_2$), and hydraulic pressures ($p_1, p_2, p_3, p_4$)
 - Output – Structural deflection ($\delta$), stress ($\sigma$), and strain ($\epsilon$)
 - Preprocessing – Scaling and arranging data according to SLIDE network requirements
 - PyTorch – Training and inference of SLIDE networks ([PyTorch](https://pytorch.org/))
+
+**Evaluate trained SLIDE models:** (*evaluate_SLIDE_networks.py*)
 
 ## Dependencies 
 - ngsolve (https://ngsolve.org/)
