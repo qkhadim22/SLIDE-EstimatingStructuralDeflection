@@ -5,6 +5,7 @@ This project uses SLIDE networks for estimating structural dynamics in hydraulic
 - Validation across 1-DOF and 2-DOF configurations with different sensor setups and lifting loads
 - Comparison against state-of-the-art models, including RNNs, LSTMs, and CNNs
 
+
 ## How to use it?
 **Generate training data:** (*generate_training_data.py*)
 - Setup – Choose an appropriate number of training and validation (test) simulations
