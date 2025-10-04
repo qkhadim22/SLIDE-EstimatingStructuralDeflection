@@ -24,12 +24,6 @@ This project uses SLIDE networks for estimating structural dynamics in hydraulic
 - cudatoolkit (https://developer.nvidia.com/cuda-toolkit)
 - scikit-learn (https://scikit-learn.org/stable/)
 
-## Folders and files
-- Exudyn – models/..
-- ML –  SLIDE/..
-- solutions – .., ../data/, ../models/, ../Figures/
-
-
 ## References
 Use the references below for citing SLIDE original paper (1), its application in hydraulically flexible systems (2) and the hydraulic parameters (3). 
 - Manzl, P., Humer, A., Khadim, Q. and Gerstmayr, J., 2025. SLIDE: A machine-learning based method for forced dynamic response estimation of multibody systems. Mechanics Based Design of Structures and Machines, pp.1-29.
